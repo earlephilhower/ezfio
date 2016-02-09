@@ -1,0 +1,32 @@
+ezFIO V1.0 
+(C) Copyright 2015 HGST
+earle.philhower.iii@hgst.com
+
+------------------------------------------------------------------------
+ezFIO is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+ezFIO is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with ezFIO.  If not, see <http://www.gnu.org/licenses/>.
+------------------------------------------------------------------------
+
+This test script is intended to give a block-level based overview of
+SSD performance (SATA, SAS, and NVME) under real-world conditions by
+focusing on sustained performance at different block sizes and queue
+depths.  Both text-mode Linux and GUI and text-mode Windows versions
+are included.
+
+The results of multiple tests are summarized into a single OpenDoc format
+spreadsheet, readable under OpenOffice, LibreOffice, or Microsoft Excel.
+
+FIO is required to perform the actual IO tests.  Please ensure the latest
+version is installed, either from your operating system's repository or
+sources available at https://github.com/axboe/fio or precompiled for
+Windows at http://www.bluestop.org/fio/
