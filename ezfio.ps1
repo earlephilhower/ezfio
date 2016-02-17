@@ -1,4 +1,4 @@
-﻿# ezfio 1.0
+# ezfio 1.0
 # earle.philhower.iii@hgst.com
 #
 # ------------------------------------------------------------------------
@@ -570,10 +570,6 @@ function DefineTests {
 	$testname = "Sustained Multi-Threaded Random Read Tests by Block Size"
 	$seqrand = "Rand"; $wmix=0; $threads=16; $runtime=$shorttime; $iops_log="`$false"; $iodepth=16
 	AddTestBSShmoo
-	
-	$testname = "512B Sequential Write Tests by Queue Depth"
-	$seqrand = "Seq"; $wmix=100; $threads=1; $runtime=$shorttime; $iops_log="`$false"; $bs=512
-	AddTestQDShmoo
 	
 	$testname = "Sequential Write Tests with Queue Depth=1 by Block Size"
 	$seqrand = "Seq"; $wmix=100; $threads=1; $runtime=$shorttime; $iops_log="`$false"; $iodepth=1

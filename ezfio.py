@@ -429,8 +429,8 @@ def DefineTests():
     bslist = (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
     qdlist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
-    shorttime = 1 # Runtime of point tests
-    longtime = 12 # Runtime of long-running tests
+    shorttime = 120 # Runtime of point tests
+    longtime = 1200 # Runtime of long-running tests
 
     def AddTest( name, seqrand, writepct, blocksize, threads, qdperthread,
                  iops_log, runtime, desc, cmdline ):
@@ -505,15 +505,6 @@ def DefineTests():
     iops_log=False
     iodepth=16
     AddTestBSShmoo()
-
-    testname = "512B Sequential Write Tests by Queue Depth"
-    seqrand = "Seq"
-    wmix=100
-    threads=1
-    runtime=shorttime
-    iops_log=False
-    bs=512
-    AddTestQDShmoo()
 
     testname = "Sequential Write Tests with Queue Depth=1 by Block Size"
     seqrand = "Seq"
