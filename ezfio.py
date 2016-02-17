@@ -488,6 +488,15 @@ def DefineTests():
             DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, desc,
                       iops_log, runtime)
 
+    AddTest('Sequential Preconditioning', 'Preparation', '', '', '', '', '',
+            '', '', lambda o: {} ) # Only for display on-screen
+    AddTest('Sequential Preconditioning', 'Seq Pass 1', '100', '131072', '1',
+            '256', False, '', 'Sequential Preconditioning Pass 1',
+            lambda o: {SequentialConditioning()} )
+    AddTest('Sequential Preconditioning', 'Seq Pass 2', '100', '131072', '1',
+            '256', False, '', 'Sequential Preconditioning Pass 2',
+            lambda o: {SequentialConditioning()} )
+
     testname = "Sustained Multi-Threaded Sequential Read Tests by Block Size"
     seqrand = "Seq"
     wmix=0
@@ -514,6 +523,15 @@ def DefineTests():
     iops_log=False
     iodepth=1
     AddTestBSShmoo()
+
+    AddTest('Random Preconditioning', 'Preparation', '', '', '', '', '', '',
+            '', lambda o: {} ) # Only for display on-screen
+    AddTest('Random Preconditioning', 'Rand Pass 1', '100', '4096', '1',
+            '256', False, '', 'Random Preconditioning',
+            lambda o: {RandomConditioning()} )
+    AddTest('Random Preconditioning', 'Rand Pass 2', '100', '4096', '1',
+            '256', False, '', 'Random Preconditioning',
+            lambda o: {RandomConditioning()} )
 
     testname = "Sustained 4KB Random Read Tests by Number of Threads"
     seqrand = "Rand"
