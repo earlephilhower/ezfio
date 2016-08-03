@@ -389,7 +389,24 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                "--exitall"]
     
     AppendFile(" ".join(cmdline), testfile)
-    code, out, err = Run(cmdline)
+
+    # There are some NVME drives with 4k physical and logical out there.
+    # Check that we can actually do this size IO, OTW return 0 for all
+    skiptest = False
+    code, out, err = Run(['blockdev', '--getiomin', str(physDrive)])
+    if code == 0: 
+        iomin = int(out.split("\n")[0])
+        if int(bs) < iomin: skiptest = True
+    # Silently ignore failure to return min block size, FIO will fail and
+    # we'll catch that a little later.
+    if skiptest:
+        code = 0
+        out = "Test not run because block size " + str(bs)
+        out += "below iominsize " + str(iomin) + "\n"
+        out += "3;" + "0;" * 100 + "\n"  # Bogus 0-filled resulte line
+        err = ""
+    else:
+        code, out, err = Run(cmdline)
     AppendFile("[STDOUT]", testfile)
     AppendFile(out, testfile)
     AppendFile("[STDERR]", testfile)
