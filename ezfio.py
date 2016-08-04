@@ -166,17 +166,25 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
 def CollectSystemInfo():
     """Collect some OS and CPU information."""
     global cpu, cpuCores, cpuFreqMHz, uname
+    uname = " ".join(platform.uname())
     code, cpuinfo, err = Run(['cat', '/proc/cpuinfo'])
     cpuinfo = cpuinfo.split("\n")
-    # Implement grep and sed in Python...
-    cpu = filter(lambda x:re.search(r'model name', x), cpuinfo)[0].split(': ')[1].replace('(R)','').replace('(TM)','')
-    cpuCores = len(filter(lambda x:re.search('model name', x), cpuinfo))
-    try:
-        code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
-        cpuFreqMHz = int(round(float(filter(lambda x: re.search('Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
-    except:
-        cpuFreqMHz = int(round(float(filter(lambda x:re.search('cpu MHz', x), cpuinfo)[0].split(': ')[1])))
-    uname = " ".join(platform.uname())
+    code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
+    if 'ppc64' in uname:
+        # Implement grep and sed in Python...
+        cpu = filter(lambda x:re.search(r'model', x), cpuinfo)[0].split(': ')[1].replace('(R)','').replace('(TM)','')
+        cpuCores = len(filter(lambda x:re.search('processor', x), cpuinfo))
+        try:
+            cpuFreqMHz = int(round(float(filter(lambda x: re.search('Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+        except:
+            cpuFreqMHz = int(round(float(filter(lambda x:re.search('clock', x), cpuinfo)[0].split(': ')[1][:-3])))
+    else:
+        cpu = filter(lambda x:re.search(r'model name', x), cpuinfo)[0].split(': ')[1].replace('(R)','').replace('(TM)','')
+        cpuCores = len(filter(lambda x:re.search('model name', x), cpuinfo))
+        try:
+            cpuFreqMHz = int(round(float(filter(lambda x: re.search('Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+        except:
+            cpuFreqMHz = int(round(float(filter(lambda x:re.search('cpu MHz', x), cpuinfo)[0].split(': ')[1])))
 
 def VerifyContinue():
     """User's last chance to abort the test.  Exit if they don't agree."""
