@@ -99,6 +99,26 @@ def CheckFIOVersion():
         sys.exit(2)
 
 
+def CheckAIOLimits():
+    """Ensure kernel AIO max transactions is large enough to run test."""
+    global aioNeeded
+    # If anything fails, silently continue.  FIO will give error if it
+    # can't run due to the AIO setting later on.
+    try:
+        code, out, err = Run(['cat', '/proc/sys/fs/aio-max-nr'])
+        if (code == 0):
+            aiomaxnr = int(out.split("\n")[0].rstrip())
+            if aiomaxnr < int(aioNeeded):
+                sys.stderr.write("ERROR: The kernel's maximum outstanding async IO setting (aio-max-nr) is too\n")
+                sys.stderr.write("       low to complete the test run.  Required value is " + str(aioNeeded) + ", current is " + str(aiomaxnr) +"\n")
+                sys.stderr.write("       To fix this temporarially, please execute the following command:\n")
+                sys.stderr.write("            sudo sysctl -w fs.aio-max-nr=" + str(aioNeeded) +"\n")
+                sys.stderr.write("Unable to continue.  Exiting.\n");
+                sys.exit(2)
+    except:
+        pass
+
+
 def ParseArgs():
     """Parse command line options into globals."""
     global physDrive, utilization, yes
@@ -830,6 +850,7 @@ odssrc = ""  # Original ODS spreadsheet file
 odsdest = "" # Generated results ODS spreadsheet file
 
 oc = [] # The list of tests to run
+aioNeeded = 4096 # Minimum AIO kernel setting to run all tests
 
 # These globals are used to return the output results of the test thread
 # Required because it's difficult to pass back values from a threading.().
@@ -841,6 +862,7 @@ ParseArgs()
 CheckAdmin()
 fio = FindFIO()
 CheckFIOVersion()
+CheckAIOLimits()
 CollectSystemInfo()
 CollectDriveInfo()
 VerifyContinue()
