@@ -121,7 +121,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, utilization, yes
+    global physDrive, utilization, outputDest, yes
     parser = argparse.ArgumentParser(
                  formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A tool to easily run FIO to benchmark sustained " \
@@ -139,6 +139,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     parser.add_argument("--utilization", "-u", dest="utilization",
         help="Amount of drive to test (in percent), 1...100", default="100",
         type=int, required=False)
+    parser.add_argument("--output", "-o", dest="outputDest",
+        help="Location where results should be saved", required=False)
     parser.add_argument("--yes", dest="yes", action='store_true',
         help="Skip the final warning prompt (for scripted tests)",
         required=False)
@@ -146,6 +148,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
 
     physDrive = args.physDrive
     utilization = args.utilization
+    outputDest = args.outputDest
     yes = args.yes
     if (utilization < 1) or (utilization > 100):
         print "ERROR:  Utilization must be between 1...100"
@@ -259,8 +262,8 @@ def CollectDriveInfo():
 
 def SetupFiles():
     """Set up names for all output/input files, place headers on CSVs."""
-    global ds, pwd, details, testcsv, timeseriescsv, odssrc, odsdest
-    global physDriveBase, fioVerString
+    global ds, details, testcsv, timeseriescsv, odssrc, odsdest
+    global physDriveBase, fioVerString, outputDest
 
     def CSVInfoHeader(f):
         """Headers to the CSV file (ending up in the ODS at the test end)."""
@@ -285,9 +288,10 @@ def SetupFiles():
     suffix += str(cpuFreqMHz) + "MHz_" + physDriveBase + "_"
     suffix += socket.gethostname() + "_" + ds
 
-    pwd = os.getcwd()
+    if not outputDest:
+        outputDest = os.getcwd()
     # The "details" directory contains the raw output of each FIO run
-    details = pwd + "/details_" + suffix
+    details = outputDest + "/details_" + suffix
     if os.path.exists(details):
         shutil.rmtree(details)
     os.mkdir(details)
@@ -310,8 +314,8 @@ def SetupFiles():
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
 
     # ODS input and output files
-    odssrc = pwd + "/original.ods"
-    odsdest = pwd + "/ezfio_results_"+suffix+".ods"
+    odssrc = outputDest + "/original.ods"
+    odsdest = outputDest + "/ezfio_results_"+suffix+".ods"
     if os.path.exists(odsdest):
         os.unlink(odsdest)
 
