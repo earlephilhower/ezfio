@@ -314,7 +314,7 @@ def SetupFiles():
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
 
     # ODS input and output files
-    odssrc = outputDest + "/original.ods"
+    odssrc = os.getcwd() + "/original.ods"
     odsdest = outputDest + "/ezfio_results_"+suffix+".ods"
     if os.path.exists(odsdest):
         os.unlink(odsdest)
