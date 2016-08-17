@@ -36,6 +36,7 @@
 
 param (
     [string]$drive = "none",
+    [string]$outDir = "none",
     [int]$util = 100,
     [switch]$help,
     [switch]$yes
@@ -204,7 +205,7 @@ function ParseArgs()
 		"ezfio, an in-depth IO tester for NVME devices"
 		"WARNING: All data on any tested device will be destroyed!`n"
 		"Usage: " 
-		[string]::Format("    .\{0} -drive <PhysicalDiskNumber> [-util <1..100>]", $scriptname)
+		[string]::Format("    .\{0} -drive <PhysicalDiskNumber> [-util <1..100>] [-outDir <path>]", $scriptname)
 		[string]::Format("EX: .\{0} -drive 2 -util 100`n", $scriptname)
 		"PhysDrive is the ID number of the \\PhysicalDrive to test"
 		"Usage is the percent of total size to test (100%=default)`n"
@@ -234,6 +235,12 @@ function ParseArgs()
         $global:utilization = $util
     }
 
+	if ( $outDir -eq "none" ) {
+	    $global:outDir = "${PWD}"
+	} else {
+		$global:outDir = "$outDir"
+	}
+	
 	if ( $drive -ne "none" ) {
 		$global:testMode = "cli"
 		if ( $drive -notin (Get-Disk).Number ){
@@ -391,13 +398,22 @@ function SetupFiles()
     # The unique suffix we generate for all output files
 	$suffix="${global:physDriveGB}GB_${global:cpuCores}cores_${global:cpuFreqMHz}MHz_${global:physDriveBase}_${env:computername}_${global:ds}"
 
+	# Need to worry about normalizing passed in directory names, or else non-absolute output paths will resolve to c:\windows\system32\...
+	if ( -not ( Test-Path -Path $global:outDir ) ) {
+	    # New-Item used PWD, so we're OK here
+	    New-Item -ItemType directory -Path $global:outDir | Out-Null
+    }
+	# Now resolve to c:\... path and put back to global for sanity.
+	$global:outDir = Resolve-Path $global:outDir
+	
     # The "details" directory contains the raw output of each FIO run
-	$global:details = "${PWD}\details_${suffix}"
+	$global:details = "${global:outDir}\details_${suffix}"
 	# The "details" directory contains the raw output of each FIO run
-	if ( Test-Path -Path $global:details ){
+	if ( Test-Path -Path $global:details ) {
 		Remove-Item -Recurse -Force $global:details | Out-Null
 	}
 	New-Item -ItemType directory -Path $global:details | Out-Null
+	
     # Copy this script into it for posterity
 	Copy-Item $scriptName $global:details
 
@@ -414,7 +430,7 @@ function SetupFiles()
 
     # ODS input and output files
 	$global:odssrc = "${PWD}\original.ods"
-	$global:odsdest = "${PWD}\ezfio_results_${suffix}.ods"
+	$global:odsdest = "${global:outDir}\ezfio_results_${suffix}.ods"
 	if (Test-Path $global:odsdest) { Remove-Item $global:odsdest }
 }
 
