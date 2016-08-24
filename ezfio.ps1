@@ -546,10 +546,7 @@ function DefineTests {
     $threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     $shorttime = 120 # Runtime of point tests
     $longtime = 1200 # Runtime of long-running tests
-$threadslist=(1)
-$bslist=(4096)
-$shorttime=2
-$longtime=4
+
     function AddTest( $name, $seqrand, $writepct, $blocksize, $threads, $qdperthread, $desc, $cmdline ) {
         if ($threads -eq "") { $qd = '' } else { $qd = ([int]$threads) * ([int]$qdperthread) }
         if ($blocksize -ne "") { if ($blocksize -lt 1024) { $bsstr = "${blocksize}b" } else { $bsstr = "{0:N0}K" -f ([int]$blocksize/1024) } }
