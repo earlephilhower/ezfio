@@ -776,7 +776,11 @@ def GenerateResultODS():
         Replace content.xml in an ODS file with in-memory, modified copy and
         write new ODS. Can't just copy source.zip and replace one file, the
         output ZIP file is not correct in many cases (opens in Excel but fails
-        ODF validation and LibreOffice fails to load under Windows)
+        ODF validation and LibreOffice fails to load under Windows).
+
+        Also strips out any binary versions of objects and the thumbnail,
+        since they are no longer valid once we've changed the data in the
+        sheet.
         """
         if os.path.exists(odsdest):
             os.unlink(odsdest)
@@ -802,6 +806,18 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 continue
             elif entry == "content.xml":
                 zadst.writestr( "content.xml", xmltext)
+            elif entry == "META-INF/manifest.xml":
+                # Remove ObjectReplacements from the list
+                rdbytes = zasrc.read(entry)
+                outbytes = ""
+                lines = rdbytes.split("\n")
+                for line in lines:
+                    if not ( ("ObjectReplacement" in line) or ("Thumbnails" in line) ):
+                        outbytes = outbytes + line + "\n"
+                zadst.writestr(entry, outbytes)
+            elif ("Thumbnails" in entry) or ("ObjectReplacement" in entry):
+                # Skip binary versions
+                continue
             else:
                 rdbytes = zasrc.read(entry)
                 zadst.writestr(entry, rdbytes)

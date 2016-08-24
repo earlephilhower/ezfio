@@ -546,7 +546,10 @@ function DefineTests {
     $threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     $shorttime = 120 # Runtime of point tests
     $longtime = 1200 # Runtime of long-running tests
-
+$threadslist=(1)
+$bslist=(4096)
+$shorttime=2
+$longtime=4
     function AddTest( $name, $seqrand, $writepct, $blocksize, $threads, $qdperthread, $desc, $cmdline ) {
         if ($threads -eq "") { $qd = '' } else { $qd = ([int]$threads) * ([int]$qdperthread) }
         if ($blocksize -ne "") { if ($blocksize -lt 1024) { $bsstr = "${blocksize}b" } else { $bsstr = "{0:N0}K" -f ([int]$blocksize/1024) } }
@@ -949,7 +952,10 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         $zasrc = [System.IO.Compression.ZipFile]::Open( $odssrc, [System.IO.Compression.ZipArchiveMode]::Read )
         $zadst = [System.IO.Compression.ZipFile]::Open( $odsdest, [System.IO.Compression.ZipArchiveMode]::Update )
         foreach ($entry in $zasrc.Entries) {
-            if ($entry.FullName -eq "mimetype") { continue }
+            if (($entry.FullName -eq "mimetype") -or $entry.FullName.StartsWith("Thumbnails") -or $entry.FullName.StartsWith("ObjectReplacement")) {
+                # Skip binary versions, and the copied-over mimetype
+                continue
+            }
             $newentry = $zadst.CreateEntry( $entry )
             if ($entry.FullName.EndsWith("/") -or $entry.FullName.EndsWith("\")) {
                 # Directory, don't copy anything
@@ -958,6 +964,20 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
                 $wr.Write( $xmltext )
                 $wr.Close()
+            } elseif ($entry.FullName -eq "META-INF/manifest.xml") {
+                # Remove ObjectReplacements from the list
+                $rd = New-Object System.IO.StreamReader( $entry.Open() )
+                $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
+                $rdbytes = $rd.ReadToEnd()
+                $rd.close()
+                $lines = $rdbytes.Split("`n")
+                foreach ($line in $lines) {
+                    if ( -not ( ($line -contains "ObjectReplacement") -or ($line -contains "Thumbnails") ) ) {
+                        $wr.Write($line)
+                        $wr.Write("`n")
+                    }
+                }
+                $wr.Close();
             } else {
                 # Copying data for from the source ZIP
                 $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
