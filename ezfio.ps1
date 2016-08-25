@@ -961,12 +961,20 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
                 $wr.Write( $xmltext )
                 $wr.Close()
+            } elseif ($entry.FullName -like "Object */content.xml") {
+                # Remove <table:table table:name="local-table"> table
+                $rd = New-Object System.IO.StreamReader( $entry.Open() )
+                $rdbytes = $rd.ReadToEnd()
+                $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
+                $wrbytes = $rdbytes -replace "<table:table table:name=`"local-table`">.*</table:table>", ""
+                $wr.write( $wrbytes )
+                $wr.Close()
+                $rd.Close()
             } elseif ($entry.FullName -eq "META-INF/manifest.xml") {
                 # Remove ObjectReplacements from the list
                 $rd = New-Object System.IO.StreamReader( $entry.Open() )
                 $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
                 $rdbytes = $rd.ReadToEnd()
-                $rd.close()
                 $lines = $rdbytes.Split("`n")
                 foreach ($line in $lines) {
                     if ( -not ( ($line -contains "ObjectReplacement") -or ($line -contains "Thumbnails") ) ) {
@@ -975,6 +983,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                     }
                 }
                 $wr.Close();
+                $rd.Close()
             } else {
                 # Copying data for from the source ZIP
                 $wr = New-Object System.IO.StreamWriter( $newentry.Open() )
@@ -994,6 +1003,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     [string]$xmlsrc = GetContentXMLFromODS $global:odssrc
     $xmlsrc = ReplaceSheetWithCSV_regex Timeseries $global:timeseriescsv $xmlsrc
     $xmlsrc = ReplaceSheetWithCSV_regex Tests $global:testcsv $xmlsrc
+    # Remove draw:image references to deleted binary previews
+    $xmlsrc = $xmlsrc -replace "<draw:image.*?/>",""
     $xmlsrc = $xmlsrc -replace "_DRIVE",$global:physDrive -replace "_TESTCAP",$global:testcapacity -replace "_MODEL",$global:model -replace "_SERIAL",$global:serial -replace "_OS",$global:os -replace "_FIO",$global:fioVerString
     UpdateContentXMLToODS_text $global:odssrc $global:odsdest $xmlsrc
 }

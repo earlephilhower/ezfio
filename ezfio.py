@@ -806,6 +806,11 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 continue
             elif entry == "content.xml":
                 zadst.writestr( "content.xml", xmltext)
+            elif ("Object" in entry) and ("content.xml" in entry):
+                # Remove <table:table table:name="local-table"> table
+                rdbytes = zasrc.read(entry)
+                outbytes = re.sub('<table:table table:name="local-table">.*</table:table>', "", rdbytes)
+                zadst.writestr(entry, outbytes)
             elif entry == "META-INF/manifest.xml":
                 # Remove ObjectReplacements from the list
                 rdbytes = zasrc.read(entry)
@@ -830,6 +835,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     xmlsrc = GetContentXMLFromODS( odssrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Timeseries", timeseriescsv, xmlsrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
+    # Remove draw:image references to deleted binary previews
+    xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
     # OpenOffice doesn't recalculate these cells on load?!
     xmlsrc = xmlsrc.replace( "_DRIVE", str(physDrive) )
     xmlsrc = xmlsrc.replace( "_TESTCAP", str(testcapacity) )
