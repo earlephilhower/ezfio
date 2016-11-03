@@ -30,6 +30,7 @@
 import argparse
 import base64
 import datetime
+import json
 import os
 import platform
 import pwd
@@ -84,7 +85,7 @@ def FindFIO():
 
 def CheckFIOVersion():
     """Check that we have a version of FIO installed that we can use."""
-    global fio, fioVerString
+    global fio, fioVerString, fioOutputFormat
     code, out, err = Run( [fio, '--version'] )
     try:
         fioVerString = out.split('\n')[0].rstrip()
@@ -97,6 +98,14 @@ def CheckFIOVersion():
         sys.stderr.write("ERROR: Unable to determine version of fio ")
         sys.stderr.write("installed.  Exiting.\n")
         sys.exit(2)
+    # Now see if we can make exceedance charts
+    try:
+        code, out, err = Run( [fio, '--parse-only', '--output-format=json+'] )
+        if (code == 0):
+            fioOutputFormat = "json+"
+    except:
+        pass
+
 
 
 def CheckAIOLimits():
@@ -262,7 +271,7 @@ def CollectDriveInfo():
 
 def SetupFiles():
     """Set up names for all output/input files, place headers on CSVs."""
-    global ds, details, testcsv, timeseriescsv, odssrc, odsdest
+    global ds, details, testcsv, timeseriescsv, exceedancecsv, odssrc, odsdest
     global physDriveBase, fioVerString, outputDest
 
     def CSVInfoHeader(f):
@@ -313,6 +322,13 @@ def SetupFiles():
     CSVInfoHeader(timeseriescsv)
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
 
+    exceedancecsv = details + "/ezfio_exceedance_"+suffix+".csv"
+    if os.path.exists(exceedancecsv):
+        os.unlink(exceedancecsv)
+    CSVInfoHeader(exceedancecsv)
+    AppendFile("QD1 Read Exceedance,,QD1 Write Exceedance,,,QD4 Read Exceedance,,QD4 Write Exceedance,,,QD16 Read Exceedance,,QD16 Write Exceedance,,,QD32 Read Exceedance,,QD32 Write Exceedance", exceedancecsv)
+    AppendFile("rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct", exceedancecsv)
+
     # ODS input and output files
     odssrc = os.getcwd() + "/original.ods"
     odsdest = outputDest + "/ezfio_results_"+suffix+".ods"
@@ -333,6 +349,15 @@ class FIOError(Exception):
         self.code = code
         self.stderr = stderr
         self.stdout = stdout
+
+def TestName(seqrand, wmix, bs, threads, iodepth):
+    """Return full path and filename prefix for test of specified params"""
+    global details, physDriveBase
+    testfile  = str(details) + "/Test" + str(seqrand) + "_w" + str(wmix)
+    testfile += "_bs" + str(bs) + "_threads" + str(threads) + "_iodepth"
+    testfile += str(iodepth) + "_" + str(physDriveBase) + ".out"
+    return testfile
+
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
@@ -394,10 +419,39 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
             now = datetime.datetime.now()
         timeseries.close()
 
+    # Taken from fio_latency2csv.py
+    def plat_idx_to_val(idx, FIO_IO_U_PLAT_BITS=6, FIO_IO_U_PLAT_VAL=64):
+        # MSB <= (FIO_IO_U_PLAT_BITS-1), cannot be rounded off. Use
+        # all bits of the sample as index
+        if (idx < (FIO_IO_U_PLAT_VAL << 1)):
+            return idx
+        # Find the group and compute the minimum value of that group
+        error_bits = (idx >> FIO_IO_U_PLAT_BITS) - 1
+        base = 1 << (error_bits + FIO_IO_U_PLAT_BITS)
+        # Find its bucket number of the group
+        k = idx % FIO_IO_U_PLAT_VAL
+        # Return the mean of the range of the bucket
+        return (base + ((k + 0.5) * (1 << error_bits)))
+
+    def WriteExceedance(j, rdwr, outfile):
+        """Generate an exceedance CSV for read or write from JSON output."""
+        global fioOutputFormat
+        if (fioOutputFormat == "json"):
+            return # This data not present in JSON format, only JSON+
+        ios = j['jobs'][0][rdwr]['total_ios']
+        if ios:
+            runttl = 0;
+            plat_bits = j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_BITS']
+            plat_val = j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_VAL']
+            for b in range(0, int(j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_NR'])):
+                cnt = int(j['jobs'][0][rdwr]['clat']['bins'][str(b)])
+                runttl += cnt
+                pctile = 1.0 - float(runttl) / float(ios);
+                if cnt > 0:
+                    AppendFile(",".join((str(plat_idx_to_val(b, plat_bits, plat_val)), str(pctile))), outfile)
+
     # Output file names
-    testfile  = str(details) + "/Test" + str(seqrand) + "_w" + str(wmix)
-    testfile += "_bs" + str(bs) + "_threads" + str(threads) + "_iodepth"
-    testfile += str(iodepth) + "_"+str(physDriveBase) + ".out"
+    testfile = TestName(seqrand, wmix, bs, threads, iodepth)
     
     if seqrand == "Seq":
         rw = "rw"
@@ -418,8 +472,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                "--runtime=" + str(runtime), "--ioengine=libaio",
                "--numjobs=" + str(threads), "--iodepth=" + str(iodepth),
                "--norandommap", "--randrepeat=0", "--thread",
-               "--output-format=terse", "--terse-version=3",
-               "--exitall"]
+               "--output-format=" + str(fioOutputFormat), "--exitall"]
     
     AppendFile(" ".join(cmdline), testfile)
 
@@ -453,15 +506,11 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     if iops_log:
         iostat.join()
 
-    lines = out.split("\n")
-    # Terse position varies, look for identification at line start "3;"
-    resultsline = filter(lambda x:re.search(r'^3;', x), lines)
-    results = resultsline[0].split(";")
-
-    rdiops = float(results[7])
-    wriops = float(results[48])
-    rlat = float(results[39])
-    wlat = float(results[80])
+    j = json.loads(out)
+    rdiops = float(j['jobs'][0]['read']['iops']);
+    wriops = float(j['jobs'][0]['write']['iops']);
+    rlat = float(j['jobs'][0]['read']['lat']['mean']);
+    wlat = float(j['jobs'][0]['write']['lat']['mean']);
     iops = "{0:0.0f}".format( rdiops + wriops )
     mbps = "{0:0.2f}".format((float( (rdiops+wriops) * bs ) /
                                      ( 1024.0 * 1024.0 )))
@@ -470,6 +519,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     AppendFile( ",".join((str(seqrand), str(wmix), str(bs), str(threads),
                           str(iodepth), str(iops), str(mbps), str(rlat),
                           str(wlat))), testcsv)
+
+    WriteExceedance(j, 'read', testfile + ".exc.read.csv")
+    WriteExceedance(j, 'write', testfile + ".exc.write.csv")
+
     return iops, mbps, lat
 
 def DefineTests():
@@ -737,6 +790,7 @@ def GenerateResultODS():
         """Extract content.xml from an ODS file, where the sheet lives."""
         ziparchive = zipfile.ZipFile( odssrc )
         content = ziparchive.read("content.xml")
+        content = content.replace("\n", "")
         return content
 
     def ReplaceSheetWithCSV_regex(sheetName, csvName, xmltext):
@@ -829,12 +883,43 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         zasrc.close()
         zadst.close()
 
-    global odssrc, timeseriescsv, testcsv, physDrive, testcapacity, model
+    def CombineExceedanceCSV():
+        """Merge eight exceedance CSVs into a single output file.
+
+        Column merge eight CSV files into a single one.  Complicated by
+        the fact that the number of columns in each may vary.
+        TODO:  These are hardcoded now, may be worthwhile to extract to
+               n-way and configurable in the test scenarios.
+        """
+        files = []
+        for qd in [ 1, 4, 16, 32 ]:
+            r = open( TestName("Rand", 30, 4096, qd, 1) + ".exc.read.csv" )
+            w = open( TestName("Rand", 30, 4096, qd, 1) + ".exc.write.csv" )
+            files.append( [ r, w ] )
+        while True:
+            all_empty = True
+            l = ""
+            for fset in files:
+                a = fset[0].readline().strip()
+                b = fset[1].readline().strip()
+                l += (a + ",", ",,")[not a]
+                l += (b + ",", ",,")[not b]
+                l += ','
+                all_empty = all_empty and (not a) and (not b)
+            AppendFile( l, exceedancecsv )
+            if all_empty:
+                break;
+
+    global odssrc, timeseriescsv, exceedancecsv, testcsv, physDrive, testcapacity, model
     global serial, uname, fioVerString, odsdest
 
     xmlsrc = GetContentXMLFromODS( odssrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Timeseries", timeseriescsv, xmlsrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
+    # Potentially add exceedance data if we have it
+    if (fioOutputFormat == "json+"):
+        CombineExceedanceCSV()
+        xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", exceedancecsv, xmlsrc )
     # Remove draw:image references to deleted binary previews
     xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
     # OpenOffice doesn't recalculate these cells on load?!
@@ -850,6 +935,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
 
 fio = ""          # FIO executable
 fioVerString = "" # FIO self-reported version
+fioOutputFormat = "json" # Can we make exceedance charts using JSON+ output?
 physDrive = ""    # Device path to test
 utilization = ""  # Device utilization % 1..100
 yes = False       # Skip user verification
@@ -872,6 +958,7 @@ pwd = "" # $CWD
 details = ""       # Test details directory
 testcsv = ""       # Intermediate test output CSV file
 timeseriescsv = "" # Intermediate iostat output CSV file
+exceedancecsv = "" # Intermediate exceedance output CSV
 
 odssrc = ""  # Original ODS spreadsheet file
 odsdest = "" # Generated results ODS spreadsheet file
