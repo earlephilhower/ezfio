@@ -112,6 +112,15 @@ function CheckFIOVersion()
         }
         exit 1
     }
+
+    try {
+        $out = (. $global:fio "--parse-only" "--output-format=json+")
+        if ($LastExitCode -eq 0 ) {
+            $global:fioOutputFormat = "json+"
+        }
+    } catch {
+        # Nothing, we can't make exceedance
+    }
 }
 
 function ParseArgs()
@@ -428,14 +437,40 @@ function SetupFiles()
     CSVInfoHeader > $global:timeseriescsv
     "IOPS" >> $global:timeseriescsv  # Add IOPS header
 
+
+    $global:exceedancecsv = "${global:details}\ezfio_exceedance_${suffix}.csv"
+    if (Test-Path $global:exceedancecsv) { Remove-Item $global:exceedancecsv }
+    CSVInfoHeader > $global:exceedancecsv
+    "QD1 Read Exceedance,,QD1 Write Exceedance,,,QD4 Read Exceedance,,QD4 Write Exceedance,,,QD16 Read Exceedance,,QD16 Write Exceedance,,,QD32 Read Exceedance,,QD32 Write Exceedance" >> $global:exceedancecsv
+    "rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct" >> $global:exceedancecsv
+
     # ODS input and output files
     $global:odssrc = "${PWD}\original.ods"
     $global:odsdest = "${global:outDir}\ezfio_results_${suffix}.ods"
     if (Test-Path $global:odsdest) { Remove-Item $global:odsdest }
 }
 
+
+function TestName ($seqrand, $wmix, $bs, $threads, $iodepth)
+{
+    # Return full path and filename prefix for test of specified params
+    $testfile  = $global:details + "\Test" + $seqrand + "_w" + [string]$wmix
+    $testfile += "_bs" + [string]$bs + "_threads" + [string]$threads + "_iodepth"
+    $testfile += [string]$iodepth + "_" + $global:physDriveBase + ".out"
+    return $testfile
+}
+
 # The actual functions that run FIO, in a string so that we can do a Start-Job using it.
 $global:jobutils = @'
+
+function TestName ($seqrand, $wmix, $bs, $threads, $iodepth)
+{
+    # Return full path and filename prefix for test of specified params
+    $testfile  = $details + "\Test" + $seqrand + "_w" + [string]$wmix
+    $testfile += "_bs" + [string]$bs + "_threads" + [string]$threads + "_iodepth"
+    $testfile += [string]$iodepth + "_" + $physDriveBase + ".out"
+    return $testfile
+}
 
 function SequentialConditioning
 {
@@ -463,12 +498,53 @@ function RandomConditioning
     }
 }
 
+# Taken from fio_latency2csv.py
+function plat_idx_to_val( $idx, $FIO_IO_U_PLAT_BITS, $FIO_IO_U_PLAT_VAL )
+{
+    # MSB <= (FIO_IO_U_PLAT_BITS-1), cannot be rounded off. Use
+    # all bits of the sample as index
+    if ($idx -lt ($FIO_IO_U_PLAT_VAL -shl 1)) {
+        return $idx
+    }
+    # Find the group and compute the minimum value of that group
+    $error_bits = ($idx -shr $FIO_IO_U_PLAT_BITS) - 1
+    $base = 1 -shl ($error_bits + $FIO_IO_U_PLAT_BITS)
+    # Find its bucket number of the group
+    $k = $idx % $FIO_IO_U_PLAT_VAL
+    # Return the mean of the range of the bucket
+    return ($base + (($k + 0.5) * (1 -shl $error_bits)))
+}
+
+function WriteExceedance($j, $rdwr, $outfile)
+{
+    # Generate an exceedance CSV for read or write from JSON output.
+    if ($fioOutputFormat -eq "json") {
+        return # This data not present in JSON format, only JSON+
+    }
+    $ios = $j.jobs[0].$rdwr.total_ios
+    if ( $ios -gt 0 ) {
+        $runttl = 0;
+        $plat_bits = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_BITS
+        $plat_val = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_VAL
+        foreach ($b in 0..[int]$j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_NR) {
+            $cnt = [int]$j.jobs[0].$rdwr.clat.bins.$b
+            $runttl += $cnt
+            $pctile = 1.0 - [float]$runttl / [float]$ios
+            if ( $cnt -gt 0 ) {
+                $p2idx = plat_idx_to_val $b $plat_bits $plat_val
+                "${p2idx},${pctile}" >> $outfile
+            }
+        }
+    }
+}
+
+
 function RunTest
 {
     # Runs the specified test, generates output CSV lines.
 
     # Output file names
-    $testfile = "$details\Test${seqrand}_w${wmix}_bs${bs}_threads${threads}_iodepth${iodepth}_${physDriveBase}.out"
+    $testfile = TestName $seqrand $wmix $bs $threads $iodepth
     $logfile = "$details\iostat_ezfio_${ds}.csv"
 
     if ( $seqrand -eq "Seq" ) { $rw = "rw" }
@@ -490,7 +566,7 @@ function RunTest
         logman start -s $env:computername ezfioIostat | Out-Null
     }
 
-    $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=windowsaio", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=terse", "--terse-version=3", "--exitall")
+    $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=windowsaio", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=$fioOutputFormat", "--exitall")
     $fio + [string]::Join(" ", $cmd) | Out-File $testfile
     . $fio @cmd | Out-File -Append $testfile
 
@@ -523,15 +599,19 @@ function RunTest
         }
     }
 
-    $results = (Get-Content $testfile | Select-Object -Last 1).Split(";")
-    $rdiops = [float]$results[7]
-    $wriops = [float]$results[48]
-    $rlat = [float]$results[39]
-    $wlat = [float]$results[80]
+    $j = ConvertFrom-Json "$(Get-Content $testfile | select -Skip 1)"
+    $rdiops = [float]($j.jobs[0].read.iops);
+    $wriops = [float]($j.jobs[0].write.iops);
+    $rlat = [float]($j.jobs[0].read.lat.mean);
+    $wlat = [float]($j.jobs[0].write.lat.mean);
     $iops = "{0:F0}" -f ($rdiops + $wriops)
     $mbps = "{0:F2}" -f (( ($rdiops+$wriops) * $bs ) / ( 1024.0 * 1024.0 ))
     $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat))
     "$seqrand,$wmix,$bs,$threads,$iodepth,$iops,$mbps,$rlat,$wlat" >> $testcsv
+
+    WriteExceedance $j "read" "${testfile}.exc.read.csv"
+    WriteExceedance $j "write" "${testfile}.exc.write.csv"
+
     Write-Output $iops $mbps $lat
 }
 '@
@@ -894,7 +974,7 @@ function GenerateResultODS()
 
     function GetContentXMLFromODS( $odssrc )
     {
-        #Extract content.xml from an ODS file, where the sheet lives."""
+        # Extract content.xml from an ODS file, where the sheet lives.
         $ziparchive = [System.IO.Compression.ZipFile]::Open( $odssrc, [System.IO.Compression.ZipArchiveMode]::Read )
         $zipentry = $ziparchive.GetEntry("content.xml")
         $reader = New-Object System.IO.StreamReader( $zipentry.Open() )
@@ -924,6 +1004,46 @@ function GenerateResultODS()
         $newt = $newt + "</table:table>"
         $searchstr = "<table:table table:name=`"$sheetName`".*?</table:table>"
         $xmltext -replace $searchstr, $newt
+    }
+
+    function CombineExceedanceCSV()
+    {
+        # Merge eight exceedance CSVs into a single output file.
+        # Column merge eight CSV files into a single one.  Complicated by
+        # the fact that the number of columns in each may vary.
+        # TODO: These are hardcoded now, may be worthwhile to extract to
+        #       n-way and configurable in the test scenarios.
+        $files = @()
+        foreach ($qd in @( 1, 4, 16, 32 ) ) {
+            $testname = TestName "Rand" 30 4096 $qd 1
+            $r = [System.IO.File]::OpenText( "${testname}.exc.read.csv" )
+            $w = [System.IO.File]::OpenText( "${testname}.exc.write.csv" )
+            $files += , @( $r, $w )
+        }
+        do {
+            $all_empty = $true
+            $l = ""
+            foreach ($fset in $files) {
+                if ($fset[0].EndOfStream) {
+                    $a = ","
+                } else {
+                    $a = $fset[0].ReadLine().Trim()
+                    $all_empty = $false
+                }
+                if ($fset[1].EndOfStream) {
+                    $b = ","
+                } else {
+                    $b = $fset[1].ReadLine().Trim()
+                    $all_empty = $false
+                }
+                $l += "${a},${b},,"
+            }
+            $l >> $exceedancecsv
+        } while (-not $all_empty)
+        foreach ($fset in $files) {
+            $fset[0].Close()
+            $fset[1].Close()
+        }
     }
 
     function UpdateContentXMLToODS_text( $odssrc, $odsdest, $xmltext )
@@ -982,7 +1102,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                         $wr.Write("`n")
                     }
                 }
-                $wr.Close();
+                $wr.Close()
                 $rd.Close()
             } else {
                 # Copying data for from the source ZIP
@@ -1003,6 +1123,11 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     [string]$xmlsrc = GetContentXMLFromODS $global:odssrc
     $xmlsrc = ReplaceSheetWithCSV_regex Timeseries $global:timeseriescsv $xmlsrc
     $xmlsrc = ReplaceSheetWithCSV_regex Tests $global:testcsv $xmlsrc
+    # Potentially add exceedance data if we have it
+    if ($global:fioOutputFormat -eq "json+") {
+        CombineExceedanceCSV
+        $xmlsrc = ReplaceSheetWithCSV_regex Exceedance $global:exceedancecsv $xmlsrc
+    }
     # Remove draw:image references to deleted binary previews
     $xmlsrc = $xmlsrc -replace "<draw:image.*?/>",""
     $xmlsrc = $xmlsrc -replace "_DRIVE",$global:physDrive -replace "_TESTCAP",$global:testcapacity -replace "_MODEL",$global:model -replace "_SERIAL",$global:serial -replace "_OS",$global:os -replace "_FIO",$global:fioVerString
@@ -1040,6 +1165,7 @@ RU5ErkJggg==
 
 $global:fio = ""          # FIO executable
 $global:fioVerString = "" # FIO self-reported version
+$global:fioOutputFormat = "json" # Can we make exceedance charts using JSON+ output?
 $global:physDrive = ""    # Device path to test
 $global:utilization = ""  # Device utilization % 1..100
 $global:yes = $false      # Skip user verification
@@ -1061,6 +1187,7 @@ $global:ds = ""  # Datestamp to appent to files/directories to uniquify
 $global:details = ""       # Test details directory
 $global:testcsv = ""       # Intermediate test output CSV file
 $global:timeseriescsv = "" # Intermediate iostat output CSV file
+$global:exceedancecsv = "" # Intermediate exceedance output CSV
 
 $global:odssrc = ""  # Original ODS spreadsheet file
 $global:odsdest = "" # Generated results ODS spreadsheet file
@@ -1081,6 +1208,7 @@ SetupFiles
 
 # $globals == The "global" variables to pass into the FIO runner script
 $global:globals  = "`$fio = `"$global:fio`";"
+$global:globals += "`$fioOutputFormat = `"$global:fioOutputFormat`";"
 $global:globals += "`$physDrive = `"$global:physDrive`";"
 $global:globals += "`$testcapacity = `"$global:testcapacity`";"
 $global:globals += "`$timeseriescsv = `"$global:timeseriescsv`";"
