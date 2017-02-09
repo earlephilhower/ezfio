@@ -314,7 +314,10 @@ def SetupFiles():
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
 
     # ODS input and output files
-    odssrc = os.getcwd() + "/original.ods"
+    odssrc = os.path.dirname( os.path.realpath(__file__) + "/original.ods" )
+    if not os.path.exists(odssrc):
+        print "ERROR: Can't find original ODS spreadsheet '" + odssrc + "'. ",
+        sys.exit(1)
     odsdest = outputDest + "/ezfio_results_"+suffix+".ods"
     if os.path.exists(odsdest):
         os.unlink(odsdest)
