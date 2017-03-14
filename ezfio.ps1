@@ -529,8 +529,10 @@ function RunTest
     $rlat = [float]$results[39]
     $wlat = [float]$results[80]
     $iops = "{0:F0}" -f ($rdiops + $wriops)
-    $mbps = "{0:F2}" -f (( ($rdiops+$wriops) * $bs ) / ( 1024.0 * 1024.0 ))
-    $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat))
+    # Locale output is not wanted here, manually make a decimal string.  Ugh
+    $mbpsfloat = (( ($rdiops+$wriops) * $bs ) / ( 1024.0 * 1024.0 ))
+    "{0:F0}" -f [math]::floor($mbpsfloat) + "." + "{0:F0}" -f [math]::floor($mbpsfloat*100000 - [math]::floor($mbpsfloat)*100000 ) | Set-Variable mbps
+    $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat)) # This is just displayed, use native locale
     "$seqrand,$wmix,$bs,$threads,$iodepth,$iops,$mbps,$rlat,$wlat" >> $testcsv
     Write-Output $iops $mbps $lat
 }
