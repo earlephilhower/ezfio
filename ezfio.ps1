@@ -491,7 +491,7 @@ function RunTest
     }
 
     $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=windowsaio", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=terse", "--terse-version=3", "--exitall")
-    $fio + [string]::Join(" ", $cmd) | Out-File $testfile
+    $fio + " " + [string]::Join(" ", $cmd) | Out-File $testfile
     . $fio @cmd | Out-File -Append $testfile
 
     if ( $LastExitCode -ne 0 ) {
