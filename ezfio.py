@@ -314,7 +314,7 @@ def SetupFiles():
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
 
     # ODS input and output files
-    odssrc = os.path.dirname( os.path.realpath(__file__) + "/original.ods" )
+    odssrc = os.path.dirname( os.path.realpath(__file__) ) + "/original.ods"
     if not os.path.exists(odssrc):
         print "ERROR: Can't find original ODS spreadsheet '" + odssrc + "'. ",
         sys.exit(1)
