@@ -507,9 +507,9 @@ function RunTest
         $inputCSV = Import-CSV "$logfile"
         [int]$length = ( $inputCSV.Length - 1 )
 
-        # Get read and write column names
-        $readcolname =  ($inputCSV | Get-Member -Type NoteProperty | Select-Object Name | Where-Object { ([string]$_.Name).Contains("Reads") } )[0].Name
-        $writecolname =  ($inputCSV | Get-Member -Type NoteProperty | Select-Object Name | Where-Object { ([string]$_.Name).Contains("Writes") } )[0].Name
+        # Get read and write column names using indexes because the titles will be localized and can't match against "read" or "write"
+		$readcolname = ($inputCSV | Get-member -MemberType 'NoteProperty' | Select-Object -ExpandProperty 'Name')[1]
+		$writecolname = ($inputCSV | Get-member -MemberType 'NoteProperty' | Select-Object -ExpandProperty 'Name')[2]
         # Sum the 2 columns to get cumulative IOPS
         for ([int]$i=0; [int]$i -le $length; [int]$i++) {
             [string]$read = $inputCSV[$i].$readcolname
