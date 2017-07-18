@@ -99,9 +99,12 @@ def CheckFIOVersion():
         sys.stderr.write("installed.  Exiting.\n")
         sys.exit(2)
     # Now see if we can make exceedance charts
+    # Can't just try --output-format=json+ because the FIO in Ubuntu 16.04
+    # repo doesn't understand it and *silently ignores ir*.  Instead, use
+    # the help output to see if "json+" exists at all...
     try:
-        code, out, err = Run( [fio, '--parse-only', '--output-format=json+'] )
-        if (code == 0):
+        code, out, err = Run( [fio, '--help'] )
+        if (code == 0) and ("json+" in out):
             fioOutputFormat = "json+"
     except:
         pass
