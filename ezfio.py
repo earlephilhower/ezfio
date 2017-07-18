@@ -820,7 +820,7 @@ def GenerateResultODS():
         content = content.replace("\n", "")
         return content
 
-    def ReplaceSheetWithCSV_regex(sheetName, csvName, xmltext):
+    def CSVtoXMLSheet(sheetName, csvName):
         """Replace a named sheet with the contents of a CSV file."""
         newt  = '<table:table table:name='
         newt += '"' + sheetName + '"' + ' table:style-name="ta1" > '
@@ -846,10 +846,24 @@ def GenerateResultODS():
             f.close()
         # Close the tags
         newt += '</table:table>'
+        return newt
+
+    def ReplaceSheetWithCSV_regex(sheetName, csvName, xmltext):
+        """Replace a named sheet with the contents of a CSV file."""
+        newt = CSVtoXMLSheet(sheetName, csvName)
+
         # Replace the XML using lazy string matching
         searchstr  = '<table:table table:name="' + sheetName
         searchstr += '.*?</table:table>'
         return re.sub(searchstr, newt, xmltext)
+
+    def AppendSheetFromCSV(sheetName, csvName, xmltext):
+        """Add a new sheet to the XML from the CSV file."""
+        newt = CSVtoXMLSheet(sheetName, csvName)
+
+        # Replace the XML using lazy string matching
+        searchstr  = '<table:named-expressions/>'
+        return re.sub(searchstr, newt + searchstr, xmltext)
 
     def UpdateContentXMLToODS_text( odssrc, odsdest, xmltext ):
         """Replace content.xml in an ODS w/an in-memory copy and write new.
@@ -999,18 +1013,19 @@ ret_iops = 0 # Last test IOPS
 ret_mbps = 0 # Last test MBPs
 ret_lat = 0  # Last test in microseconds
 
-ParseArgs()
-CheckAdmin()
-fio = FindFIO()
-CheckFIOVersion()
-CheckAIOLimits()
-CollectSystemInfo()
-CollectDriveInfo()
-VerifyContinue()
-SetupFiles()
-DefineTests()
-RunAllTests()
-GenerateResultODS()
+if __name__ == "__main__":
+    ParseArgs()
+    CheckAdmin()
+    fio = FindFIO()
+    CheckFIOVersion()
+    CheckAIOLimits()
+    CollectSystemInfo()
+    CollectDriveInfo()
+    VerifyContinue()
+    SetupFiles()
+    DefineTests()
+    RunAllTests()
+    GenerateResultODS()
 
-print "\nCOMPLETED!\nSpreadsheet file: " + odsdest
+    print "\nCOMPLETED!\nSpreadsheet file: " + odsdest
 
