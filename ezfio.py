@@ -711,7 +711,7 @@ def DefineTests():
 
 def RunAllTests():
     """Iterate through the OC work queue and run each job, show progress."""
-    global ret_iops, ret_mbps, ret_lat
+    global ret_iops, ret_mbps, ret_lat, fioVerString
 
     # Determine some column widths to make format specifiers
     maxlen = 0
@@ -753,6 +753,7 @@ def RunAllTests():
     print fmtinfo.format("CPU", str(cpu))
     print fmtinfo.format("Cores", str(cpuCores))
     print fmtinfo.format("Frequency", str(cpuFreqMHz))
+    print fmtinfo.format("FIO Version", str(fioVerString))
 
     print "\n"
     print fmtstr.format("Test Description", "BW(MB/s)", "IOPS", "Lat(us)")

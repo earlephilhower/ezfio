@@ -937,6 +937,7 @@ function RunAllTestsCLI()
     [string]::format( $fmtinfo, "CPU", $global:cpu)
     [string]::format( $fmtinfo, "Cores", $global:cpuCores)
     [string]::format( $fmtinfo, "Frequency", $global:cpuFreqMHz)
+    [string]::format( $fmtinfo, "FIO Version", $global:fioVerString)
 
     ""
     [string]::format( $fmtstr, "Test Description", "BW(MB/s)", "IOPS", "Lat(us)")
