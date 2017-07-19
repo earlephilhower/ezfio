@@ -158,6 +158,9 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                     addl = fmt;
                     for sheet in [ "Tests", "Timeseries", "Exceedance"]:
                         addl = re.sub( sheet, sheet+suffix, addl )
+                    # Remove any existing label and add updated one
+                    addl = re.sub("loext:label-string=\".*?\"" , "", addl );
+                    addl = re.sub ("<chart:series ", "<chart:series " + "loext:label-string=\""+suffix+"\" ", addl) 
                     styleMatch = re.search("chart:style-name=\"(.)*?\"", fmt)
                     if styleMatch:
                         styleName = re.sub("chart:style-name=\"", "", styleMatch.group(0) )
@@ -175,6 +178,12 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                             newStyle = re.sub( "svg:stroke-color=\"#.*?\"", "svg:stroke-color=\"#" + color + "\"", newStyle )
                             # Add in the new style...
                             outbytes = re.sub ( oldStyle, oldStyle + newStyle, outbytes )
+                        # Add legend if it doesn't exist
+                        legendMatch = re.search("<chart:legend .*?/>", outbytes)
+                        if not legendMatch:
+                            # Put in hardcoded one...looks like junk, but can be tweaked by user in application
+                            legend = "<chart:legend chart:legend-position=\"bottom\" svg:x=\"0.000cm\" svg:y=\"0.000cm\" style:legend-expansion=\"wide\" chart:style-name=\"ch3\"/>";
+                            outbytes = re.sub ("</chart:title>", "</chart:title>" + legend, outbytes )
                 zadst.writestr(entry, outbytes)
             elif entry == "META-INF/manifest.xml":
                 # Remove ObjectReplacements from the list
