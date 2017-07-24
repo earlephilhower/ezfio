@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import argparse
 import base64
 import os
 import sys
@@ -363,22 +364,33 @@ def EmitSheetFromCSV(sheetName, csvName):
     t += '</table:table>'
     return t
 
+def EmitHeaderRows(inputFiles):
+    for item in [ 'Label', 'Drive', 'Model', 'Serial', 'AvailCap', 'TestCap', 'CPU', 'Cores', 'Freq', 'OS', 'FIO' ]:
+        t += '<table:table-row table:style-name="ro1">'
+        t +=   '<table:table-cell office:value-type="string" calcext:value-type="string"><text:p>' + item + '</text:p></table:table-cell>'
+        for elem in inputFiles:
+            t += '<table:table-cell office:value-type="string" calcext:value-type="string"><text:p>' + elem[item] + '</text:p></table:table-cell>'
+        t += '</table:table-row>'
+    return t
 
-def EmitGraphSheet():
+def EmitGraphSheet(inputFiles):
     t  = '<table:table table:name='
     t += '"' + "Graphs" + '"' + ' table:style-name="ta1" > '
     t += '<table:shapes>'
     t += EmitDrawFrameChart( "1", "first chart", "11cm", "10cm", "1cm", "2cm", 1 )
     t += '</table:shapes>'
     t += '<table:table-column table:style-name="co1" table:number-columns-repeated="100" table:default-cell-style-name="ce1"/>'
-    t += '<table:table-row table:style-name="ro1">'
-    t +=   '<table:table-cell office:value-type="string" calcext:value-type="string"><text:p>Some Text Here</text:p></table:table-cell>'
-    t += '</table:table-row>'
+    t += EmitHeaderRows(inputFiles)
     t += '</table:table>'
     return t
 
-# We redirect stdout to a temp file, so save original terminal output
-SAVEOUT = sys.stdout
+parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+    description="Combine multiple EZFIO runs into a single, labeled ODS file.")
+parser.add_argument("--dir", "-d", dest = "dir", default=[], help="Directory to add to sheet (multiple options allowed)", required=True)
+args = parser.parse_args()
+
+
+
 
 odsfile = "out.ods"
 if os.path.exists(odsfile):
@@ -400,6 +412,6 @@ ods.writestr( "META-INF/manifest.xml", Manifest(1) )
 ods.writestr( "content.xml", SpreadsheetStart() + EmitGraphSheet() + EmitSheetFromCSV("data", "a.csv") + SpreadsheetEnd() )
 ods.writestr( "Object 1/meta.xml", Meta() )
 ods.writestr( "Object 1/styles.xml", Styles() )
-ods.writestr( "Object 1/content.xml", Chart( "1100pt", "1000pt", "10pt", "20pt", "Cats and Dogs", True, "30pt", "40pt", "100pt", "100pt", "90pt", "80pt", "4pt", "5pt", "xaxishere", "6pt", "7pt", "yaxistext", "data.A2:data.A4", [ {'label' : "cat1", 'data' : "data.B2:data.B4"} ] ) )
+ods.writestr( "Object 1/content.xml", Chart( "11cm", "10cm", "10pt", "20pt", "Cats and Dogs", True, "30pt", "40pt", "100pt", "100pt", "90pt", "80pt", "4pt", "5pt", "xaxishere", "6pt", "7pt", "yaxistext", "data.A2:data.A4", [ {'label' : "cat1", 'data' : "data.B2:data.B4"}, {'label': "cat2", 'data' : "data.C2:data.C4" } ] ) )
 
 ods.close()
