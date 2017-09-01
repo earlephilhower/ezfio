@@ -524,17 +524,35 @@ function WriteExceedance($j, $rdwr, $outfile)
     $ios = $j.jobs[0].$rdwr.total_ios
     if ( $ios -gt 0 ) {
         $runttl = 0;
-        $plat_bits = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_BITS
-        $plat_val = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_VAL
-        foreach ($b in 0..[int]$j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_NR) {
-            $cnt = [int]$j.jobs[0].$rdwr.clat.bins.$b
-            $runttl += $cnt
-            $pctile = 1.0 - [float]$runttl / [float]$ios
-            if ( $cnt -gt 0 ) {
-                $p2idx = plat_idx_to_val $b $plat_bits $plat_val
-                "${p2idx},${pctile}" >> $outfile
-            }
-        }
+		# FIO 2.99 changed this to use saner latency bucketing, no semi-log needed
+		if ($j.jobs[0].$rdwr.clat_ns) {
+			# This is very inefficient, but need to convert from object.property's to sorted ints...
+			$lat_ns = @()
+			foreach ($n in ((Get-Member -inputObject $j.jobs[0].$rdwr.clat_ns.bins -MemberType Properties).name) ) {
+				$lat_ns += [int]$n
+			}
+			foreach ($b in ($lat_ns | sort-object)) {
+				$lat_us = [float]($b) / 1000.0
+				$cnt = [int]$j.jobs[0].$rdwr.clat_ns.bins.$b
+				$runttl += $cnt
+				$pctile = 1.0 - [float]$runttl / [float]$ios;
+				if ( $cnt -gt 0 ) {
+					"$lat_us,$pctile" >> $outfile
+				}
+			}
+		} else {
+			$plat_bits = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_BITS
+			$plat_val = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_VAL
+			foreach ($b in 0..[int]$j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_NR) {
+				$cnt = [int]$j.jobs[0].$rdwr.clat.bins.$b
+				$runttl += $cnt
+				$pctile = 1.0 - [float]$runttl / [float]$ios
+				if ( $cnt -gt 0 ) {
+					$p2idx = plat_idx_to_val $b $plat_bits $plat_val
+					"${p2idx},${pctile}" >> $outfile
+				}
+			}
+		}
     }
 }
 
