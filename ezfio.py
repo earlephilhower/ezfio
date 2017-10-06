@@ -508,7 +508,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     if skiptest:
         code = 0
         out = "Test not run because block size " + str(bs)
-        out += "below iominsize " + str(iomin) + "\n"
+        out += " below iominsize " + str(iomin) + "\n"
         out += "3;" + "0;" * 100 + "\n"  # Bogus 0-filled resulte line
         err = ""
     else:
@@ -526,28 +526,39 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     if iops_log:
         iostat.join()
 
-    j = json.loads(out)
-    rdiops = float(j['jobs'][0]['read']['iops']);
-    wriops = float(j['jobs'][0]['write']['iops']);
+    if skiptest:
+        rdiops = 0
+        wriops = 0
+        rlat = 0
+        wlat = 0
+    else:
+        j = json.loads(out)
+        rdiops = float(j['jobs'][0]['read']['iops']);
+        wriops = float(j['jobs'][0]['write']['iops']);
 
-    # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
-    try:
-        rlat = float(j['jobs'][0]['read']['lat_ns']['mean']) / 1000; # ns->us
-        wlat = float(j['jobs'][0]['write']['lat_ns']['mean']) / 1000; # ns->us
-    except:
-        rlat = float(j['jobs'][0]['read']['lat']['mean']);
-        wlat = float(j['jobs'][0]['write']['lat']['mean']);
+        # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
+        try:
+            rlat = float(j['jobs'][0]['read']['lat_ns']['mean']) / 1000; # ns->us
+            wlat = float(j['jobs'][0]['write']['lat_ns']['mean']) / 1000; # ns->us
+        except:
+            rlat = float(j['jobs'][0]['read']['lat']['mean']);
+            wlat = float(j['jobs'][0]['write']['lat']['mean']);
+
     iops = "{0:0.0f}".format( rdiops + wriops )
     mbps = "{0:0.2f}".format((float( (rdiops+wriops) * bs ) /
-                                     ( 1024.0 * 1024.0 )))
+                                        ( 1024.0 * 1024.0 )))
     lat = "{0:0.1f}".format(max(rlat, wlat))
 
     AppendFile( ",".join((str(seqrand), str(wmix), str(bs), str(threads),
                           str(iodepth), str(iops), str(mbps), str(rlat),
                           str(wlat))), testcsv)
 
-    WriteExceedance(j, 'read', testfile + ".exc.read.csv")
-    WriteExceedance(j, 'write', testfile + ".exc.write.csv")
+    if skiptest:
+        AppendFile("1,1\n", testfile + ".exc.read.csv")
+        AppendFile("1,1\n", testfile + ".exc.write.csv")
+    else:
+        WriteExceedance(j, 'read', testfile + ".exc.read.csv")
+        WriteExceedance(j, 'write', testfile + ".exc.write.csv")
 
     return iops, mbps, lat
 
