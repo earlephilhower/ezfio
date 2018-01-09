@@ -620,8 +620,10 @@ function RunTest
     $j = ConvertFrom-Json "$(Get-Content $testfile | select -Skip 1)"
     $rdiops = [float]($j.jobs[0].read.iops);
     $wriops = [float]($j.jobs[0].write.iops);
-    $rlat = [float]($j.jobs[0].read.lat.mean);
-    $wlat = [float]($j.jobs[0].write.lat.mean);
+    $rlat = [float]($j.jobs[0].read.lat_ns.mean) / 1000.0;
+    if ($rlat -le 0.0001) { $rlat = [float]($j.jobs[0].read.lat.mean); }
+    $wlat = [float]($j.jobs[0].write.lat_ns.mean) / 1000.0;
+    if ($wlat -le 0.0001) { $wlat = [float]($j.jobs[0].wlat.lat.mean); }
     $iops = "{0:F0}" -f ($rdiops + $wriops)
     # Locale output is not wanted here, manually make a decimal string.  Ugh
     $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat))

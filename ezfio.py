@@ -539,9 +539,11 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
         try:
             rlat = float(j['jobs'][0]['read']['lat_ns']['mean']) / 1000; # ns->us
-            wlat = float(j['jobs'][0]['write']['lat_ns']['mean']) / 1000; # ns->us
         except:
             rlat = float(j['jobs'][0]['read']['lat']['mean']);
+        try:
+            wlat = float(j['jobs'][0]['write']['lat_ns']['mean']) / 1000; # ns->us
+        except:
             wlat = float(j['jobs'][0]['write']['lat']['mean']);
 
     iops = "{0:0.0f}".format( rdiops + wriops )
