@@ -1,5 +1,5 @@
-ezFIO V1.0 
-(C) Copyright 2015 HGST
+ezFIO V1.0
+(C) Copyright 2015-18 HGST
 earle.philhower.iii@hgst.com
 
 ------------------------------------------------------------------------
@@ -29,4 +29,22 @@ spreadsheet, readable under OpenOffice, LibreOffice, or Microsoft Excel.
 FIO is required to perform the actual IO tests.  Please ensure the latest
 version is installed, either from your operating system's repository or
 sources available at https://github.com/axboe/fio or precompiled for
-Windows at http://www.bluestop.org/fio/
+Windows at https://ci.appveyor.com/project/axboe/fio (for the GIT latest)
+or from http://www.bluestop.org/fio/ .
+
+(There seems to be an issue with FIO 3.1 under Windows that is not present
+under earlier or later builds.  In a nutshell, the 1200 second sustained
+performance test ends up running, under this version, for over 12 hours!
+While the final results are still good and the script continues, it does
+waste a large amount of time and so I recommend avoiding the BlueStop 3.1
+build.  The CI.appveyor.com link above can be used to get current FIO
+head builds instead.)
+
+------------------------------------------------------------------------
+
+ezFIO got where it is today through the help of many users who filed
+bugs when things didn't work, or submitted patches to support new CPUs.
+Please feel free to open issues or drop me a line if you have questions.
+
+Special thanks to @coolrecep (Recep Baltaş) who has spent literally days
+tracking down Windows issues.
