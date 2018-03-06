@@ -14,7 +14,7 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with ezFIO.  If not, see <http://www.gnu.org/licenses/>.
+along with ezFIO.  If not, see <https://www.gnu.org/licenses/>.
 ------------------------------------------------------------------------
 
 This test script is intended to give a block-level based overview of
@@ -30,7 +30,7 @@ FIO is required to perform the actual IO tests.  Please ensure the latest
 version is installed, either from your operating system's repository or
 sources available at https://github.com/axboe/fio or precompiled for
 Windows at https://ci.appveyor.com/project/axboe/fio (for the GIT latest)
-or from http://www.bluestop.org/fio/ .
+or from https://www.bluestop.org/fio/ .
 
 (There seems to be an issue with FIO 3.1 under Windows that is not present
 under earlier or later builds.  In a nutshell, the 1200 second sustained
