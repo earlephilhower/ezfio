@@ -403,7 +403,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         stoptime = starttime + datetime.timedelta(0, int(o['runtime']))
         statpath = "/sys/block/"+physDriveBase+"/stat"
         if not os.path.exists(statpath):
-            base = re.sub("[0-9]+$", "", physDriveBase)
+            base = re.sub("p?[0-9]+$", "", physDriveBase)
             statpath = "/sys/block/"+base+"/stat"
         with open(statpath, "r") as f:
             stat = f.read().rstrip().split()
