@@ -80,7 +80,7 @@ function FindFIO()
     if ( -not (Get-Command fio.exe) ) {
         $ret = [System.Windows.Forms.MessageBox]::Show( "FIO is required to run IO tests. Would you like to install?", "FIO Not Detected", 4, 32 )
         if ($ret -eq "yes" ) {
-            Start-Process "http://www.bluestop.org/fio/"
+            Start-Process "https://www.bluestop.org/fio/"
         }
         exit
     } else {
