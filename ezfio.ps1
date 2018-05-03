@@ -382,25 +382,23 @@ function CollectDriveInfo()
 }
 
 
+# Set up names for all output/input files, place headers on CSVs.
+function CSVInfoHeader {
+	# Headers to the CSV file (ending up in the ODS at the test end)
+	"Drive,$global:physDrive"
+	"Model,$global:model"
+	"Serial,$global:serial"
+	"AvailCapacity,$global:physDriveGiB,GiB"
+	"TestedCapacity,$global:testcapacity,GiB"
+	"CPU,$global:cpu"
+	"Cores,$global:cpuCores"
+	"Frequency,$global:cpuFreqMHz"
+	"OS,$global:uname"
+	"FIOVersion,$global:fioVerString"
+}
+
 function SetupFiles()
 {
-    # Set up names for all output/input files, place headers on CSVs.
-
-    function CSVInfoHeader {
-        # Headers to the CSV file (ending up in the ODS at the test end)
-
-        "Drive,$global:physDrive"
-        "Model,$global:model"
-        "Serial,$global:serial"
-        "AvailCapacity,$global:physDriveGiB,GiB"
-        "TestedCapacity,$global:testcapacity,GiB"
-        "CPU,$global:cpu"
-        "Cores,$global:cpuCores"
-        "Frequency,$global:cpuFreqMHz"
-        "OS,$global:uname"
-        "FIOVersion,$global:fioVerString"
-    }
-
     # Datestamp for run output files
     $global:ds=(Get-Date).ToString("yyyy-MM-dd_HH-mm-ss")
 
@@ -436,13 +434,6 @@ function SetupFiles()
     if (Test-Path $global:timeseriescsv) { Remove-Item $global:timeseriescsv }
     CSVInfoHeader > $global:timeseriescsv
     "IOPS" >> $global:timeseriescsv  # Add IOPS header
-
-
-    $global:exceedancecsv = "${global:details}\ezfio_exceedance_${suffix}.csv"
-    if (Test-Path $global:exceedancecsv) { Remove-Item $global:exceedancecsv }
-    CSVInfoHeader > $global:exceedancecsv
-    "QD1 Read Exceedance,,QD1 Write Exceedance,,,QD4 Read Exceedance,,QD4 Write Exceedance,,,QD16 Read Exceedance,,QD16 Write Exceedance,,,QD32 Read Exceedance,,QD32 Write Exceedance" >> $global:exceedancecsv
-    "rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct" >> $global:exceedancecsv
 
     # ODS input and output files
     $global:odssrc = "${PWD}\original.ods"
@@ -1030,31 +1021,52 @@ function GenerateResultODS()
         $xmltext -replace $searchstr, $newt
     }
 
-    function CombineExceedanceCSV()
+    function CombineExceedanceCSV( $qdList, $testType, $testWpct, $testBS, $testIOdepth, $suffix )
     {
-        # Merge eight exceedance CSVs into a single output file.
-        # Column merge eight CSV files into a single one.  Complicated by
+        # Merge multiple exceedance CSVs into a single output file.
+        # Column merge multiple CSV files into a single one.  Complicated by
         # the fact that the number of columns in each may vary.
-        # TODO: These are hardcoded now, may be worthwhile to extract to
-        #       n-way and configurable in the test scenarios.
+
+		$csv = $global:details + "/ezfio_exceedance_" + $suffix + ".csv"
+		if ( Test-Path -Path $csv ) {
+			Remove-Item -Recurse -Force $csv | Out-Null
+		}
+		CSVInfoHeader > $csv
+		$line1 = ""
+		$line2 = ""
+		foreach ($qd in $qdList) {
+			$line1 = $line1 + "QD${qd} Read Exceedance,,QD${qd} Write Exceedance,,,"
+			$line2 = $line2 + "rdusec,rdpct,wrusec,wrpct,,"
+		}
+		$line1 >> $csv;
+		$line2 >> $csv;
+
         $files = @()
-        foreach ($qd in @( 1, 4, 16, 32 ) ) {
-            $testname = TestName "Rand" 30 4096 $qd 1
-            $r = [System.IO.File]::OpenText( "${testname}.exc.read.csv" )
-            $w = [System.IO.File]::OpenText( "${testname}.exc.write.csv" )
+        foreach ($qd in $qdList) {
+            $testname = TestName $testType $testWpct $testBS $qd $testIOdepth
+            if ( Test-Path -Path "${testname}.exc.read.csv") {
+				$r = [System.IO.File]::OpenText( "${testname}.exc.read.csv" )
+			} else {
+				$r = $null
+			}
+            if ( Test-Path -Path "${testname}.exc.write.csv") {
+				$w = [System.IO.File]::OpenText( "${testname}.exc.write.csv" )
+			} else {
+				$w = $null
+			}
             $files += , @( $r, $w )
         }
         do {
             $all_empty = $true
             $l = ""
             foreach ($fset in $files) {
-                if ($fset[0].EndOfStream) {
+				if (($fset[0] -eq $null) -or ($fset[0].EndOfStream)) {
                     $a = ","
                 } else {
                     $a = $fset[0].ReadLine().Trim()
                     $all_empty = $false
                 }
-                if ($fset[1].EndOfStream) {
+                if (($fset[1] -eq $null) -or ($fset[1].EndOfStream)) {
                     $b = ","
                 } else {
                     $b = $fset[1].ReadLine().Trim()
@@ -1062,12 +1074,17 @@ function GenerateResultODS()
                 }
                 $l += "${a},${b},,"
             }
-            $l >> $exceedancecsv
+            $l >> $csv
         } while (-not $all_empty)
         foreach ($fset in $files) {
-            $fset[0].Close()
-            $fset[1].Close()
+            if ($fset[0] -ne $null) {
+                $fset[0].Close()
+            }
+            if ($fset[1] -ne $null) {
+                $fset[1].Close()
+            }
         }
+        return $csv
     }
 
     function UpdateContentXMLToODS_text( $odssrc, $odsdest, $xmltext )
@@ -1149,8 +1166,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     $xmlsrc = ReplaceSheetWithCSV_regex Tests $global:testcsv $xmlsrc
     # Potentially add exceedance data if we have it
     if ($global:fioOutputFormat -eq "json+") {
-        CombineExceedanceCSV
-        $xmlsrc = ReplaceSheetWithCSV_regex Exceedance $global:exceedancecsv $xmlsrc
+        $csv = CombineExceedanceCSV @(1, 4, 16, 32) "Rand" 30 4096 1 "exceedance30"
+        $xmlsrc = ReplaceSheetWithCSV_regex Exceedance $csv $xmlsrc
     }
     # Remove draw:image references to deleted binary previews
     $xmlsrc = $xmlsrc -replace "<draw:image.*?/>",""
@@ -1211,7 +1228,6 @@ $global:ds = ""  # Datestamp to appent to files/directories to uniquify
 $global:details = ""       # Test details directory
 $global:testcsv = ""       # Intermediate test output CSV file
 $global:timeseriescsv = "" # Intermediate iostat output CSV file
-$global:exceedancecsv = "" # Intermediate exceedance output CSV
 
 $global:odssrc = ""  # Original ODS spreadsheet file
 $global:odsdest = "" # Generated results ODS spreadsheet file

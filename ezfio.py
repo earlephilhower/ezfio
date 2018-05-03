@@ -930,12 +930,10 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         zadst.close()
 
     def CombineExceedanceCSV(qdList, testType, testWpct, testBS, testIOdepth, suffix):
-        """Merge eight exceedance CSVs into a single output file.
+        """Merge multiple exceedance CSVs into a single output file.
 
-        Column merge eight CSV files into a single one.  Complicated by
+        Column merge multiple CSV files into a single one.  Complicated by
         the fact that the number of columns in each may vary.
-        TODO:  These are hardcoded now, may be worthwhile to extract to
-               n-way and configurable in the test scenarios.
         """
         csv = details + "/ezfio_exceedance_"+suffix+".csv"
         if os.path.exists(csv):
@@ -989,7 +987,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
     # Potentially add exceedance data if we have it
     if (fioOutputFormat == "json+"):
-        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance1" )
+        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30" )
         xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", csv, xmlsrc )
     # Remove draw:image references to deleted binary previews
     xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
