@@ -271,26 +271,26 @@ def CollectDriveInfo():
         print "Install sdparm to allow model/serial extraction. Continuing."
 
 
+def CSVInfoHeader(f):
+    """Headers to the CSV file (ending up in the ODS at the test end)."""
+    global physDrive, model, serial, physDriveGiB, testcapacity
+    global cpu, cpuCores, cpuFreqMHz, uname
+    AppendFile("Drive," + str(physDrive), f)
+    AppendFile("Model," + str(model), f)
+    AppendFile("Serial," + str(serial), f)
+    AppendFile("AvailCapacity," + str(physDriveGiB) + ",GiB", f)
+    AppendFile("TestedCapacity," + str(testcapacity) + ",GiB", f)
+    AppendFile("CPU," + str(cpu), f)
+    AppendFile("Cores," + str(cpuCores), f)
+    AppendFile("Frequency," + str(cpuFreqMHz), f)
+    AppendFile("OS," + str(uname), f)
+    AppendFile("FIOVersion," + str(fioVerString), f)
+
 
 def SetupFiles():
     """Set up names for all output/input files, place headers on CSVs."""
-    global ds, details, testcsv, timeseriescsv, exceedancecsv, odssrc, odsdest
+    global ds, details, testcsv, timeseriescsv, odssrc, odsdest
     global physDriveBase, fioVerString, outputDest
-
-    def CSVInfoHeader(f):
-        """Headers to the CSV file (ending up in the ODS at the test end)."""
-        global physDrive, model, serial, physDriveGiB, testcapacity
-        global cpu, cpuCores, cpuFreqMHz, uname
-        AppendFile("Drive," + str(physDrive), f)
-        AppendFile("Model," + str(model), f)
-        AppendFile("Serial," + str(serial), f)
-        AppendFile("AvailCapacity," + str(physDriveGiB) + ",GiB", f)
-        AppendFile("TestedCapacity," + str(testcapacity) + ",GiB", f)
-        AppendFile("CPU," + str(cpu), f)
-        AppendFile("Cores," + str(cpuCores), f)
-        AppendFile("Frequency," + str(cpuFreqMHz), f)
-        AppendFile("OS," + str(uname), f)
-        AppendFile("FIOVersion," + str(fioVerString), f)
 
     # Datestamp for run output files
     ds = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -324,14 +324,6 @@ def SetupFiles():
         os.unlink(timeseriescsv)
     CSVInfoHeader(timeseriescsv)
     AppendFile("IOPS", timeseriescsv) # Add IOPS header
-
-    # Exceedance charts for newer FIO versions
-    exceedancecsv = details + "/ezfio_exceedance_"+suffix+".csv"
-    if os.path.exists(exceedancecsv):
-        os.unlink(exceedancecsv)
-    CSVInfoHeader(exceedancecsv)
-    AppendFile("QD1 Read Exceedance,,QD1 Write Exceedance,,,QD4 Read Exceedance,,QD4 Write Exceedance,,,QD16 Read Exceedance,,QD16 Write Exceedance,,,QD32 Read Exceedance,,QD32 Write Exceedance", exceedancecsv)
-    AppendFile("rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct,,rdusec,rdpct,wrusec,wrpct", exceedancecsv)
 
     # ODS input and output files
     odssrc = os.path.dirname( os.path.realpath(__file__) ) + "/original.ods"
@@ -937,34 +929,57 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         zasrc.close()
         zadst.close()
 
-    def CombineExceedanceCSV():
-        """Merge eight exceedance CSVs into a single output file.
+    def CombineExceedanceCSV(qdList, testType, testWpct, testBS, testIOdepth, suffix):
+        """Merge multiple exceedance CSVs into a single output file.
 
-        Column merge eight CSV files into a single one.  Complicated by
+        Column merge multiple CSV files into a single one.  Complicated by
         the fact that the number of columns in each may vary.
-        TODO:  These are hardcoded now, may be worthwhile to extract to
-               n-way and configurable in the test scenarios.
         """
+        csv = details + "/ezfio_exceedance_"+suffix+".csv"
+        if os.path.exists(csv):
+            os.unlink(csv)
+        CSVInfoHeader(csv)
+        line1 = ""
+        line2 = ""
+        for qd in qdList:
+            line1 = line1 + ("QD%d Read Exceedance,,QD%d Write Exceedance,,," % (qd, qd))
+            line2 = line2 + "rdusec,rdpct,wrusec,wrpct,,"
+        AppendFile(line1, csv)
+        AppendFile(line2, csv)
+
         files = []
-        for qd in [ 1, 4, 16, 32 ]:
-            r = open( TestName("Rand", 30, 4096, qd, 1) + ".exc.read.csv" )
-            w = open( TestName("Rand", 30, 4096, qd, 1) + ".exc.write.csv" )
+        for qd in qdList:
+            try:
+                r = open( TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.read.csv" )
+            except:
+                r = None
+            try:
+                w = open( TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.write.csv" )
+            except:
+                w = None
             files.append( [ r, w ] )
         while True:
             all_empty = True
             l = ""
             for fset in files:
-                a = fset[0].readline().strip()
-                b = fset[1].readline().strip()
+                if fset[0] is None:
+                    a = ""
+                else:
+                    a = fset[0].readline().strip()
+                if fset[1] is None:
+                    b = ""
+                else:
+                    b = fset[1].readline().strip()
                 l += (a + ",", ",,")[not a]
                 l += (b + ",", ",,")[not b]
                 l += ','
                 all_empty = all_empty and (not a) and (not b)
-            AppendFile( l, exceedancecsv )
+            AppendFile( l, csv )
             if all_empty:
-                break;
+                break
+        return csv
 
-    global odssrc, timeseriescsv, exceedancecsv, testcsv, physDrive, testcapacity, model
+    global odssrc, timeseriescsv, testcsv, physDrive, testcapacity, model
     global serial, uname, fioVerString, odsdest
 
     xmlsrc = GetContentXMLFromODS( odssrc )
@@ -972,8 +987,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
     # Potentially add exceedance data if we have it
     if (fioOutputFormat == "json+"):
-        CombineExceedanceCSV()
-        xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", exceedancecsv, xmlsrc )
+        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30" )
+        xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", csv, xmlsrc )
     # Remove draw:image references to deleted binary previews
     xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
     # OpenOffice doesn't recalculate these cells on load?!
