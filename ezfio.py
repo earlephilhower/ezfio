@@ -258,6 +258,18 @@ def CollectDriveInfo():
     model = "UNKNOWN"
     serial = "UNKNOWN"
     try:
+        nvmecli = ['nvme', 'list', physDrive]
+        code, info, err = Run(nvmecli)
+        lines = info.split("\n")
+        if len(lines) == 4:
+            data = lines[2].split("  ")
+            model=data[5].lstrip().rstrip()
+            serial=data[2].lstrip().rstrip()
+        else:
+            print "Unable to identify drive using nvmecli. Continuing."
+    except:
+        print "Install nvme-cli to allow model/serial extraction. Continuing."
+    try:
         sdparmcmd = ['sdparm', '--page', 'sn', '--inquiry', '--long',
                      physDrive]
         code, sdparm, err = Run(sdparmcmd)
