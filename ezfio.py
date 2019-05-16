@@ -491,7 +491,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     # There are some NVME drives with 4k physical and logical out there.
     # Check that we can actually do this size IO, OTW return 0 for all
     skiptest = False
-    code, out, err = Run(['blockdev', '--getiomin', str(physDrive)])
+    code, out, err = Run(['blockdev', '--getpbsz', str(physDrive)])
     if code == 0: 
         iomin = int(out.split("\n")[0])
         if int(bs) < iomin: skiptest = True
