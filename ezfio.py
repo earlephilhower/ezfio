@@ -39,6 +39,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import zipfile
@@ -133,7 +134,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, utilization, outputDest, offset, yes
+    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes
     parser = argparse.ArgumentParser(
                  formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A tool to easily run FIO to benchmark sustained " \
@@ -146,6 +147,9 @@ Requirements:\n
 * sdparm to identify the NVME device and serial number
 
 WARNING: All data on the target device will be DESTROYED by this test.""")
+    parser.add_argument("--cluster", dest="cluster", action='store_true',
+        help="Run the test on a cluster (--drive in host1:/dev/p1,host2:/dev/ps,...)",
+        required=False)
     parser.add_argument("--drive", "-d", dest = "physDrive",
         help="Device to test (ex: /dev/nvme0n1)", required=True)
     parser.add_argument("--utilization", "-u", dest="utilization",
@@ -162,10 +166,19 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     args = parser.parse_args()
 
     physDrive = args.physDrive
+    physDriveTxt = physDrive
     utilization = args.utilization
     outputDest = args.outputDest
     offset = args.offset
     yes = args.yes
+
+    cluster = args.cluster
+    # For cluster mode, we add a new physDriveList dict and fake physDrive
+    if cluster:
+        nodes = physDrive.split(",");
+        for node in nodes:
+            physDriveDict[node.split(":")[0]] = node.split(":")[1]
+        physDrive = nodes[0].split(":")[1]
     if (utilization < 1) or (utilization > 100):
         print "ERROR:  Utilization must be between 1...100"
         parser.print_help()
@@ -283,9 +296,9 @@ def CollectDriveInfo():
 
 def CSVInfoHeader(f):
     """Headers to the CSV file (ending up in the ODS at the test end)."""
-    global physDrive, model, serial, physDriveGiB, testcapacity, testoffset
+    global physDriveTxt, model, serial, physDriveGiB, testcapacity, testoffset
     global cpu, cpuCores, cpuFreqMHz, uname
-    AppendFile("Drive," + str(physDrive), f)
+    AppendFile("Drive," + str(physDriveTxt).replace(","," ") , f)
     AppendFile("Model," + str(model), f)
     AppendFile("Serial," + str(serial), f)
     AppendFile("AvailCapacity," + str(physDriveGiB) + ",GiB", f)
@@ -370,13 +383,43 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
-    # Note that we can't use regular test runner because this test needs
-    # to run for a specified # of bytes, not a specified # of seconds.
-    cmdline = [fio, "--name=SeqCond", "--readwrite=write", "--bs=128k",
-               "--ioengine=libaio", "--iodepth=64", "--direct=1",
-               "--filename=" + physDrive, "--size=" + str(testcapacity) + "G",
-               "--thread", "--offset=" + str(testoffset)  + "G"]
+    def GenerateJobfile(drive, testcapacity, testoffset):
+        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile.write("[SeqCond]\n")
+        # Note that we can't use regular test runner because this test needs
+        # to run for a specified # of bytes, not a specified # of seconds.
+        jobfile.write("readwrite=write\n")
+        jobfile.write("bs=128k\n")
+        jobfile.write("ioengine=libaio\n")
+        jobfile.write("iodepth=64\n")
+        jobfile.write("direct=1\n")
+        jobfile.write("filename=" + str(drive) + "\n")
+        jobfile.write("size=" + str(testcapacity) + "G\n")
+        jobfile.write("thread\n")
+        jobfile.write("offset=" + str(testoffset)  + "G\n")
+        jobfile.close()
+        return jobfile
+
+    cmdline = [ fio ]
+    if not cluster:
+        jobfile = GenerateJobfile(physDrive, testcapacity, testoffset)
+        cmdline = cmdline + [ jobfile.name ]
+    else:
+        jobfile = [ ]
+        for host in physDriveDict.keys():
+            newjob = GenerateJobfile(physDriveDict[host], testcapacity, testoffset)
+            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
+            jobfile = jobfile + [ newjob ]
+    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
+
     code, out, err = Run(cmdline)
+
+    if cluster:
+        for job in jobfile:
+            os.unlink(job.name)
+    else:
+        os.unlink(jobfile.name)
+
     if code != 0:
         raise FIOError(" ".join(cmdline), code , err, out)
     else:
@@ -384,14 +427,48 @@ def SequentialConditioning():
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
-    # Note that we can't use regular test runner because this test needs
-    # to run for a specified # of bytes, not a specified # of seconds.
-    cmdline = [fio, "--name=RandCond", "--readwrite=randwrite", "--bs=4k",
-               "--invalidate=1", "--end_fsync=0", "--group_reporting",
-               "--direct=1", "--filename=" + str(physDrive),
-               "--size=" + str(testcapacity) + "G", "--ioengine=libaio",
-               "--iodepth=256", "--norandommap", "--randrepeat=0", "--thread", "--offset=" + str(testoffset) + "G"]
+    def GenerateJobfile(drive, testcapacity, testoffset):
+        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile.write("[RandCond]\n")
+        # Note that we can't use regular test runner because this test needs
+        # to run for a specified # of bytes, not a specified # of seconds.
+        jobfile.write("readwrite=randwrite\n")
+        jobfile.write("bs=4k\n")
+        jobfile.write("invalidate=1\n")
+        jobfile.write("end_fsync=0\n")
+        jobfile.write("group_reporting\n")
+        jobfile.write("direct=1\n")
+        jobfile.write("filename=" + str(drive) + "\n")
+        jobfile.write("size=" + str(testcapacity) + "G\n")
+        jobfile.write("ioengine=libaio\n")
+        jobfile.write("iodepth=256\n")
+        jobfile.write("norandommap\n")
+        jobfile.write("randrepeat=0\n")
+        jobfile.write("thread\n")
+        jobfile.write("offset=" + str(testoffset) + "G\n")
+        jobfile.close()
+        return jobfile
+
+    cmdline = [ fio ]
+    if not cluster:
+        jobfile = GenerateJobfile(physDrive, testcapacity, testoffset)
+        cmdline = cmdline + [ jobfile.name ]
+    else:
+        jobfile = [ ]
+        for host in physDriveDict.keys():
+            newjob = GenerateJobfile(physDriveDict[host], testcapacity, testoffset)
+            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
+            jobfile = jobfile + [ newjob ]
+    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
+
     code, out, err = Run(cmdline)
+
+    if cluster:
+        for job in jobfile:
+            os.unlink(job.name)
+    else:
+        os.unlink(jobfile.name)
+
     if code != 0:
         raise FIOError(" ".join(cmdline), code , err, out)
     else:
@@ -399,6 +476,7 @@ def RandomConditioning():
 
 def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     """Runs the specified test, generates output CSV lines."""
+    global cluster, physDriveDict
 
     def IOStatThread(**kwargs):
         """Collect 1-second interval IOPS values to a CSV."""
@@ -442,36 +520,62 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         # Return the mean of the range of the bucket
         return (base + ((k + 0.5) * (1 << error_bits)))
 
-    def WriteExceedance(j, rdwr, outfile):
+    def WriteExceedance(client, rdwr, outfile):
         """Generate an exceedance CSV for read or write from JSON output."""
         global fioOutputFormat
         if (fioOutputFormat == "json"):
             return # This data not present in JSON format, only JSON+
-        ios = j['jobs'][0][rdwr]['total_ios']
+        ios = client[rdwr]['total_ios']
+        bins = client[rdwr]['clat_ns']['bins']
         if ios:
             runttl = 0;
             # This was changed in 2.99 to be in nanoseconds and to discard the crazy _bits magic
             if float(fioVerString.split('-')[1]) >= 2.99:
                 lat_ns = [];
                 # JSON dict has keys of type string, need a sorted integer list for our work...
-                for entry in j['jobs'][0][rdwr]['clat_ns']['bins']:
+                for entry in bins:
                     lat_ns.append(int(entry))
                 for entry in sorted(lat_ns):
                     lat_us = float(entry) / 1000.0
-                    cnt = int(j['jobs'][0][rdwr]['clat_ns']['bins'][str(entry)])
+                    cnt = int(bins[str(entry)])
                     runttl += cnt
                     pctile = 1.0 - float(runttl) / float(ios);
                     if cnt > 0:
                         AppendFile(",".join((str(lat_us), str(pctile))), outfile)
             else:
-                plat_bits = j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_BITS']
-                plat_val = j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_VAL']
-                for b in range(0, int(j['jobs'][0][rdwr]['clat']['bins']['FIO_IO_U_PLAT_NR'])):
-                    cnt = int(j['jobs'][0][rdwr]['clat']['bins'][str(b)])
+                plat_bits = client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_BITS']
+                plat_val = client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_VAL']
+                for b in range(0, int(client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_NR'])):
+                    cnt = int(client[rdwr]['clat']['bins'][str(b)])
                     runttl += cnt
                     pctile = 1.0 - float(runttl) / float(ios);
                     if cnt > 0:
                         AppendFile(",".join((str(plat_idx_to_val(b, plat_bits, plat_val)), str(pctile))), outfile)
+
+    def GenerateJobfile(rw, wmix, bs, drive, testcapacity, runtime, threads, iodepth, testoffset):
+        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile.write("[test]\n")
+        jobfile.write("readwrite=" + str(rw) + "\n")
+        jobfile.write("rwmixwrite=" + str(wmix) + "\n")
+        jobfile.write("bs=" + str(bs) + "\n")
+        jobfile.write("invalidate=1\n")
+        jobfile.write("end_fsync=0\n")
+        jobfile.write("group_reporting\n")
+        jobfile.write("direct=1\n")
+        jobfile.write("filename=" + str(drive) + "\n")
+        jobfile.write("size=" + str(testcapacity) + "G\n")
+        jobfile.write("time_based\n")
+        jobfile.write("runtime=" + str(runtime) + "\n")
+        jobfile.write("ioengine=libaio\n")
+        jobfile.write("numjobs=" + str(threads) + "\n")
+        jobfile.write("iodepth=" + str(iodepth) + "\n")
+        jobfile.write("norandommap\n")
+        jobfile.write("randrepeat=0\n")
+        jobfile.write("thread\n")
+        jobfile.write("exitall\n")
+        jobfile.write("offset=" +  str(testoffset) + "G\n")
+        jobfile.close()
+        return jobfile
 
     # Output file names
     testfile = TestName(seqrand, wmix, bs, threads, iodepth)
@@ -487,17 +591,25 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         iostat = threading.Thread(target=IOStatThread, kwargs=(o))
         iostat.start()
 
-    cmdline = [fio, "--name=test", "--readwrite=" + str(rw),
-               "--rwmixwrite=" + str(wmix), "--bs=" + str(bs),
-               "--invalidate=1", "--end_fsync=0", "--group_reporting",
-               "--direct=1", "--filename=" + str(physDrive),
-               "--size=" + str(testcapacity) + "G", "--time_based",
-               "--runtime=" + str(runtime), "--ioengine=libaio",
-               "--numjobs=" + str(threads), "--iodepth=" + str(iodepth),
-               "--norandommap", "--randrepeat=0", "--thread",
-               "--output-format=" + str(fioOutputFormat), "--exitall", "--offset=" + str(testoffset) + "G"]
-
-    AppendFile(" ".join(cmdline), testfile)
+    cmdline = [ fio ]
+    if not cluster:
+        jobfile = GenerateJobfile(rw, wmix, bs, physDrive, testcapacity, runtime, threads, iodepth, testoffset)
+        cmdline = cmdline + [ jobfile.name ]
+        AppendFile("[JOBFILE]", testfile)
+        with open(jobfile.name, 'r') as of:
+            txt = of.read()
+            AppendFile(txt, testfile)
+    else:
+        jobfile = [ ]
+        for host in physDriveDict.keys():
+            newjob = GenerateJobfile(rw, wmix, bs, physDriveDict[host], testcapacity, runtime, threads, iodepth, testoffset)
+            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
+            AppendFile('[JOBFILE-' + str(host) + "]", testfile)
+            with open(newjob.name, 'r') as of:
+                txt = of.read()
+                AppendFile(txt, testfile)
+            jobfile = jobfile + [ newjob ]
+    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
 
     # There are some NVME drives with 4k physical and logical out there.
     # Check that we can actually do this size IO, OTW return 0 for all
@@ -521,6 +633,12 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     AppendFile("[STDERR]", testfile)
     AppendFile(err, testfile)
 
+    if cluster:
+        for job in jobfile:
+            os.unlink(job.name)
+    else:
+        os.unlink(jobfile.name)
+
     # Make sure we had successful completion, else note and abort run
     if code != 0:
         AppendFile("ERROR", testcsv)
@@ -529,25 +647,40 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     if iops_log:
         iostat.join()
 
-    if skiptest:
-        rdiops = 0
-        wriops = 0
-        rlat = 0
-        wlat = 0
-    else:
+    rdiops = 0
+    wriops = 0
+    rlat = 0
+    wlat = 0
+    if not skiptest:
+        # Chomp anything before the json.
+        for i in range(0, len(out)):
+            if out[i] == '{':
+                out = out[i:]
+                break
         j = json.loads(out)
-        rdiops = float(j['jobs'][0]['read']['iops']);
-        wriops = float(j['jobs'][0]['write']['iops']);
+
+        if cluster and len(physDriveDict.keys()) == 1:
+            client =  j['client_stats'][0]
+        elif cluster:
+            for res in j['client_stats']:
+                if res['jobname'] == "All clients":
+                    client = res
+                    break
+        else:
+            client = j['jobs'][0]
+
+        rdiops = float(client['read']['iops']);
+        wriops = float(client['write']['iops']);
 
         # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
         try:
-            rlat = float(j['jobs'][0]['read']['lat_ns']['mean']) / 1000; # ns->us
+            rlat = float(client['read']['lat_ns']['mean']) / 1000 # ns->us
         except:
-            rlat = float(j['jobs'][0]['read']['lat']['mean']);
+            rlat = float(client['read']['lat']['mean'])
         try:
-            wlat = float(j['jobs'][0]['write']['lat_ns']['mean']) / 1000; # ns->us
+            wlat = float(client['write']['lat_ns']['mean']) / 1000 # ns->us
         except:
-            wlat = float(j['jobs'][0]['write']['lat']['mean']);
+            wlat = float(client['write']['lat']['mean'])
 
     iops = "{0:0.0f}".format( rdiops + wriops )
     mbps = "{0:0.2f}".format((float( (rdiops+wriops) * bs ) /
@@ -562,8 +695,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("1,1\n", testfile + ".exc.read.csv")
         AppendFile("1,1\n", testfile + ".exc.write.csv")
     else:
-        WriteExceedance(j, 'read', testfile + ".exc.read.csv")
-        WriteExceedance(j, 'write', testfile + ".exc.write.csv")
+        WriteExceedance( client, 'read', testfile + ".exc.read.csv")
+        WriteExceedance( client, 'write', testfile + ".exc.write.csv")
 
     return iops, mbps, lat
 
@@ -764,7 +897,7 @@ def RunAllTests():
     print "ezFio test parameters:\n"
 
     fmtinfo="{0: >20}: {1}"
-    print fmtinfo.format("Drive", str(physDrive))
+    print fmtinfo.format("Drive", str(physDriveTxt))
     print fmtinfo.format("Model", str(model))
     print fmtinfo.format("Serial", str(serial))
     print fmtinfo.format("AvailCapacity", str(physDriveGiB) + " GiB")
@@ -1017,7 +1150,10 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
 fio = ""          # FIO executable
 fioVerString = "" # FIO self-reported version
 fioOutputFormat = "json" # Can we make exceedance charts using JSON+ output?
+cluster = False   # Running multiple jobs in a cluster using fio --server
 physDrive = ""    # Device path to test
+physDriveTxt = "" # Unadulterated drive line
+physDriveDict = {} # Device path to test
 utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
