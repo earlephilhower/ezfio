@@ -61,9 +61,6 @@ appropriate system info on the first drive.
 In the current implementation, all nodes/drives must be identical in
 size.  There are no provisions for having volumes of differing sizes.
 
-Limitations:  The steady-state IOPS graph is only for the host that
-ezfio is running on, and not the whole cluster.
-
 All other graphs and results should be the aggregate of the entire
 cluster, as reported by fio.
 
