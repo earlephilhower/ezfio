@@ -282,6 +282,18 @@ def CollectDriveInfo():
     model = "UNKNOWN"
     serial = "UNKNOWN"
     try:
+        nvmeclicmd = ['nvme', 'list', '--output-format=json']
+        code, nvmecli, err = Run(nvmeclicmd)
+        if code == 0:
+            j = json.loads(nvmecli)
+            for drive in j['Devices']:
+                if drive['DevicePath'] == physDrive:
+                    model = drive['ModelNumber']
+                    serial = drive['SerialNumber']
+                    return
+    except:
+        pass #  An error in nvme is not a problem
+    try:
         sdparmcmd = ['sdparm', '--page', 'sn', '--inquiry', '--long',
                      physDrive]
         code, sdparm, err = Run(sdparmcmd)
