@@ -30,6 +30,7 @@
 import argparse
 import base64
 import datetime
+import glob
 import json
 import os
 import platform
@@ -585,15 +586,20 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     else:
         rw = "randrw"
 
-    if iops_log:
+    if iops_log and not cluster:
         o={}
         o['runtime'] = runtime
         iostat = threading.Thread(target=IOStatThread, kwargs=(o))
         iostat.start()
 
+    if iops_log:
+        extra_runtime = 10
+    else:
+        extra_runtime = 0
+
     cmdline = [ fio ]
     if not cluster:
-        jobfile = GenerateJobfile(rw, wmix, bs, physDrive, testcapacity, runtime, threads, iodepth, testoffset)
+        jobfile = GenerateJobfile(rw, wmix, bs, physDrive, testcapacity, runtime + extra_runtime, threads, iodepth, testoffset)
         cmdline = cmdline + [ jobfile.name ]
         AppendFile("[JOBFILE]", testfile)
         with open(jobfile.name, 'r') as of:
@@ -602,13 +608,18 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     else:
         jobfile = [ ]
         for host in physDriveDict.keys():
-            newjob = GenerateJobfile(rw, wmix, bs, physDriveDict[host], testcapacity, runtime, threads, iodepth, testoffset)
+            newjob = GenerateJobfile(rw, wmix, bs, physDriveDict[host], testcapacity, runtime + extra_runtime, threads, iodepth, testoffset)
             cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
             AppendFile('[JOBFILE-' + str(host) + "]", testfile)
             with open(newjob.name, 'r') as of:
                 txt = of.read()
                 AppendFile(txt, testfile)
             jobfile = jobfile + [ newjob ]
+            if iops_log:
+                AppendFile("write_iops_log=" + testfile , newjob.name);
+                AppendFile("log_avg_msec=1000", newjob.name);
+                AppendFile("log_unix_epoch=0", newjob.name);
+
     cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
 
     # There are some NVME drives with 4k physical and logical out there.
@@ -644,8 +655,36 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("ERROR", testcsv)
         raise FIOError(" ".join(cmdline), code, err, out)
 
-    if iops_log:
+    if iops_log and not cluster:
         iostat.join()
+    elif iops_log and cluster:
+        # Keep a running sum of IOPS as seen by all servers
+        iops = []
+        for x in range(0, runtime + extra_runtime):
+            iops = iops + [0]
+        for filename in glob.glob( testfile + '_iops.*.log.*'):
+            catcmdline = [ 'cat', filename ]
+            catcode, catout, caterr = Run(catcmdline)
+            if catcode != 0:
+                AppendFile("ERROR", testcsv)
+                raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
+            lines = catout.split("\n")
+            # Set time 0 IOPS to first values
+            riops = 0
+            wiops = 0
+            nexttime = 0
+            for x in range(0, runtime + extra_runtime):
+                iops[x] = iops[x] + riops + wiops
+                while len(lines)>1 and (nexttime < x):
+                    parts = lines[0].split(",")
+                    nexttime = float(parts[0]) / 1000.0
+                    if int(lines[0].split(",")[2]) == 1:
+                        wiops = int(parts[1])
+                    else:
+                        riops = int(parts[1])
+                    lines = lines[1:]
+            with open(timeseriescsv, 'w') as f:
+                f.write("\n".join(str(iop) for iop in iops[int(extra_runtime/2):]))
 
     rdiops = 0
     wriops = 0
