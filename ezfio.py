@@ -29,6 +29,7 @@
 
 import argparse
 import base64
+from collections import OrderedDict 
 import datetime
 import glob
 import json
@@ -746,8 +747,15 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("1,1\n", testfile + ".exc.read.csv")
         AppendFile("1,1\n", testfile + ".exc.write.csv")
     else:
-        WriteExceedance( client, 'read', testfile + ".exc.read.csv")
-        WriteExceedance( client, 'write', testfile + ".exc.write.csv")
+        try:
+            WriteExceedance( client, 'read', testfile + ".exc.read.csv")
+        except:
+            AppendFile("1,1\n", testfile + ".exc.read.csv")
+        try:
+            WriteExceedance( client, 'write', testfile + ".exc.write.csv")
+        except:
+            AppendFile("1,1\n", testfile + ".exc.write.csv")
+
 
     return iops, mbps, lat
 
@@ -1204,7 +1212,7 @@ fioOutputFormat = "json" # Can we make exceedance charts using JSON+ output?
 cluster = False   # Running multiple jobs in a cluster using fio --server
 physDrive = ""    # Device path to test
 physDriveTxt = "" # Unadulterated drive line
-physDriveDict = {} # Device path to test
+physDriveDict = OrderedDict() # Device path to test
 utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
