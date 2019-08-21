@@ -40,6 +40,44 @@ waste a large amount of time and so I recommend avoiding the BlueStop 3.1
 build.  The CI.appveyor.com link above can be used to get current FIO
 head builds instead.)
 
+
+------------------------------------------------------------------------
+
+A new --cluster option allows for running multiple clients in parallel,
+to allow testing performance of shared storage systems like SANs or
+AFAs.
+
+Start a "fio --server" job on all clients, then on one of them run
+./ezfio.py --cluster --drive host1:/dev/dr1,host2:/dev/dr2/... ...
+
+Basically add "--cluster" to the command line before the drive
+option, and in the drive option make a comma separated list of
+hostname:/path/to/storage .
+
+The first host in the list must be the one you're currently running
+ezfio from.  ezfio will try using the local system to collect
+appropriate system info on the first drive.
+
+In the current implementation, all nodes/drives must be identical in
+size.  There are no provisions for having volumes of differing sizes.
+
+All other graphs and results should be the aggregate of the entire
+cluster, as reported by fio.
+
+ex:
+
+Start up FIO servers on all systems to be tested
+(on host 1):
+  # fio --server &
+(on host 2):
+  # fio --server &
+(on host 3):
+  # fio --server &
+
+Run a benchmark run:
+(on host 1)
+  # ./ezfio.py --cluster --drive host1:/dev/nvme1n1,host2:/dev/nvme1n1,host3:/dev/nvme4n1
+
 ------------------------------------------------------------------------
 
 ezFIO got where it is today through the help of many users who filed
