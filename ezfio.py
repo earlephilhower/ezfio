@@ -136,7 +136,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes, quickie
+    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes, quickie, verify
     parser = argparse.ArgumentParser(
                  formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A tool to easily run FIO to benchmark sustained " \
@@ -151,6 +151,9 @@ Requirements:\n
 WARNING: All data on the target device will be DESTROYED by this test.""")
     parser.add_argument("--cluster", dest="cluster", action='store_true',
         help="Run the test on a cluster (--drive in host1:/dev/p1,host2:/dev/ps,...)",
+        required=False)
+    parser.add_argument("--verify", dest="verify", action='store_true',
+        help="Have FIO perform data verifications on reads.  May impact performance.",
         required=False)
     parser.add_argument("--drive", "-d", dest = "physDrive",
         help="Device to test (ex: /dev/nvme0n1)", required=True)
@@ -176,6 +179,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     offset = args.offset
     yes = args.yes
     quickie = args.quickie
+    verify = args.verify
 
     cluster = args.cluster
     # For cluster mode, we add a new physDriveList dict and fake physDrive
@@ -585,6 +589,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                         AppendFile(",".join((str(plat_idx_to_val(b, plat_bits, plat_val)), str(pctile))), outfile)
 
     def GenerateJobfile(rw, wmix, bs, drive, testcapacity, runtime, threads, iodepth, testoffset):
+        global verify
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[test]\n")
         jobfile.write("readwrite=" + str(rw) + "\n")
@@ -605,6 +610,9 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         jobfile.write("randrepeat=0\n")
         jobfile.write("thread=1\n")
         jobfile.write("exitall=1\n")
+        if verify:
+            jobfile.write("verify=crc32c\n")
+            jobfile.write("random_generator=lfsr\n")
         jobfile.write("offset=" +  str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
@@ -1248,6 +1256,7 @@ utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
 quickie = False   # Flag to indicate short runs, only for ezfio debugging!
+verify = False    # Use built-in FIO data verification
 
 cpu = ""         # CPU model
 cpuCores = ""    # # of cores (including virtual)
