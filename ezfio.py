@@ -690,32 +690,41 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         iostat.join()
     elif iops_log and cluster:
         # Keep a running sum of IOPS as seen by all servers
-        iops = []
-        for x in range(0, runtime + extra_runtime):
-            iops = iops + [0]
-        for filename in glob.glob( testfile + '_iops.*.log.*'):
-            catcmdline = [ 'cat', filename ]
-            catcode, catout, caterr = Run(catcmdline)
-            if catcode != 0:
-                AppendFile("ERROR", testcsv)
-                raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
-            lines = catout.split("\n")
-            # Set time 0 IOPS to first values
-            riops = 0
-            wiops = 0
-            nexttime = 0
-            for x in range(0, runtime + extra_runtime):
-                iops[x] = iops[x] + riops + wiops
-                while len(lines)>1 and (nexttime < x):
-                    parts = lines[0].split(",")
-                    nexttime = float(parts[0]) / 1000.0
-                    if int(lines[0].split(",")[2]) == 1:
-                        wiops = int(parts[1])
-                    else:
-                        riops = int(parts[1])
-                    lines = lines[1:]
-            with open(timeseriescsv, 'w') as f:
-                f.write("\n".join(str(iop) for iop in iops[int(extra_runtime/2):]))
+        iops = [0] * (runtime + extra_runtime)
+        host_iops = OrderedDict()
+        for host in physDriveDict.keys():
+            host_iops[host] = [0] * (runtime + extra_runtime)
+            for filename in glob.glob( testfile + '_iops.*.log.' + host):
+                catcmdline = [ 'cat', filename ]
+                catcode, catout, caterr = Run(catcmdline)
+                if catcode != 0:
+                    AppendFile("ERROR", testcsv)
+                    raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
+                lines = catout.split("\n")
+                # Set time 0 IOPS to first values
+                riops = 0
+                wiops = 0
+                nexttime = 0
+                for x in range(0, runtime + extra_runtime):
+                    iops[x] = iops[x] + riops + wiops
+                    host_iops[host][x] = host_iops[host][x] + riops + wiops
+                    while len(lines)>1 and (nexttime < x):
+                        parts = lines[0].split(",")
+                        nexttime = float(parts[0]) / 1000.0
+                        if int(lines[0].split(",")[2]) == 1:
+                            wiops = int(parts[1])
+                        else:
+                            riops = int(parts[1])
+                        lines = lines[1:]
+
+        # Generate the combined CSV
+        with open(timeseriescsv, 'w') as f:
+            for cnt in range(int(extra_runtime/2), runtime + extra_runtime):
+                line = str(iops[cnt])
+                if len(physDriveDict.keys()) > 1:
+                    for host in physDriveDict.keys():
+                        line = line + "," + str(host_iops[host][cnt])
+                f.write(line + "\n")
 
     rdiops = 0
     wriops = 0
