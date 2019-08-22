@@ -136,7 +136,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes
+    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes, quickie
     parser = argparse.ArgumentParser(
                  formatter_class=argparse.RawDescriptionHelpFormatter,
     description="A tool to easily run FIO to benchmark sustained " \
@@ -165,6 +165,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     parser.add_argument("--yes", dest="yes", action='store_true',
         help="Skip the final warning prompt (for scripted tests)",
         required=False)
+    parser.add_argument("--quickie", dest="quickie", help=argparse.SUPPRESS,
+        action='store_true', required=False)
     args = parser.parse_args()
 
     physDrive = args.physDrive
@@ -173,6 +175,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     outputDest = args.outputDest
     offset = args.offset
     yes = args.yes
+    quickie = args.quickie
 
     cluster = args.cluster
     # For cluster mode, we add a new physDriveList dict and fake physDrive
@@ -311,18 +314,25 @@ def CollectDriveInfo():
 def CSVInfoHeader(f):
     """Headers to the CSV file (ending up in the ODS at the test end)."""
     global physDriveTxt, model, serial, physDriveGiB, testcapacity, testoffset
-    global cpu, cpuCores, cpuFreqMHz, uname
-    AppendFile("Drive," + str(physDriveTxt).replace(","," ") , f)
-    AppendFile("Model," + str(model), f)
-    AppendFile("Serial," + str(serial), f)
-    AppendFile("AvailCapacity," + str(physDriveGiB) + ",GiB", f)
-    AppendFile("TestedCapacity," + str(testcapacity) + ",GiB", f)
-    AppendFile("TestedOffset," + str(testoffset) + ",GiB", f)
-    AppendFile("CPU," + str(cpu), f)
-    AppendFile("Cores," + str(cpuCores), f)
-    AppendFile("Frequency," + str(cpuFreqMHz), f)
-    AppendFile("OS," + str(uname), f)
-    AppendFile("FIOVersion," + str(fioVerString), f)
+    global cpu, cpuCores, cpuFreqMHz, uname, quickie
+    if quickie:
+        prefix = "QUICKIE-INVALID-RESULTS-"
+    else:
+        prefix = ""
+    AppendFile("Drive," + prefix + str(physDriveTxt).replace(","," ") , f)
+    AppendFile("Model," + prefix + str(model), f)
+    AppendFile("Serial," + prefix + str(serial), f)
+    AppendFile("AvailCapacity," + prefix + str(physDriveGiB) + ",GiB", f)
+    if offset == 0:
+        testcap = str(testcapacity)
+    else:
+        testcap = str(testcapacity) + " @ " + str(testoffset)
+    AppendFile("TestedCapacity," + prefix + str(testcap) + ",GiB", f)
+    AppendFile("CPU," + prefix + str(cpu), f)
+    AppendFile("Cores," + prefix + str(cpuCores), f)
+    AppendFile("Frequency," + prefix + str(cpuFreqMHz), f)
+    AppendFile("OS," + prefix + str(uname), f)
+    AppendFile("FIOVersion," + prefix + str(fioVerString), f)
 
 
 def SetupFiles():
@@ -397,6 +407,7 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
+    global quickie
     def GenerateJobfile(drive, testcapacity, testoffset):
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[SeqCond]\n")
@@ -408,7 +419,10 @@ def SequentialConditioning():
         jobfile.write("iodepth=64\n")
         jobfile.write("direct=1\n")
         jobfile.write("filename=" + str(drive) + "\n")
-        jobfile.write("size=" + str(testcapacity) + "G\n")
+        if quickie:
+            jobfile.write("size=1G\n")
+        else:
+            jobfile.write("size=" + str(testcapacity) + "G\n")
         jobfile.write("thread=1\n")
         jobfile.write("offset=" + str(testoffset)  + "G\n")
         jobfile.close()
@@ -441,6 +455,7 @@ def SequentialConditioning():
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
+    global quickie
     def GenerateJobfile(drive, testcapacity, testoffset):
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[RandCond]\n")
@@ -453,7 +468,10 @@ def RandomConditioning():
         jobfile.write("group_reporting=1\n")
         jobfile.write("direct=1\n")
         jobfile.write("filename=" + str(drive) + "\n")
-        jobfile.write("size=" + str(testcapacity) + "G\n")
+        if quickie:
+            jobfile.write("size=1G\n")
+        else:
+            jobfile.write("size=" + str(testcapacity) + "G\n")
         jobfile.write("ioengine=libaio\n")
         jobfile.write("iodepth=256\n")
         jobfile.write("norandommap\n")
@@ -761,13 +779,17 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
 def DefineTests():
     """Generate the work list for the main worker into OC."""
-    global oc
+    global oc, quickie
     # What we're shmoo-ing across
     bslist = (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
     qdlist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
+
     shorttime = 120 # Runtime of point tests
     longtime = 1200 # Runtime of long-running tests
+    if quickie:
+        shorttime = int(shorttime / 10)
+        longtime = int(longtime / 10)
 
     def AddTest( name, seqrand, writepct, blocksize, threads, qdperthread,
                  iops_log, runtime, desc, cmdline ):
@@ -1216,6 +1238,7 @@ physDriveDict = OrderedDict() # Device path to test
 utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
+quickie = False   # Flag to indicate short runs, only for ezfio debugging!
 
 cpu = ""         # CPU model
 cpuCores = ""    # # of cores (including virtual)
