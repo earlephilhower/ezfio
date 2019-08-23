@@ -29,7 +29,7 @@
 
 import argparse
 import base64
-from collections import OrderedDict 
+from collections import OrderedDict
 import datetime
 import glob
 import json
@@ -62,7 +62,7 @@ def Run(cmd):
 
 def CheckAdmin():
     """Check that we have root privileges for disk access, abort if not."""
-    if ( os.geteuid() != 0 ):
+    if os.geteuid() != 0:
         sys.stderr.write("Root privileges are required for low-level disk ")
         sys.stderr.write("access.\nPlease restart this script as root ")
         sys.stderr.write("(sudo) to continue.\n")
@@ -73,12 +73,12 @@ def FindFIO():
     # Determine if FIO is in path or CWD
     try:
         ret, out, err = Run(["fio", "-v"])
-        if (ret == 0):
+        if ret == 0:
             return "fio"
     except:
         try:
             ret, out, err = Run(['./fio', '-v'])
-            if (ret == 0):
+            if ret == 0:
                 return "./fio"
         except:
             sys.stderr.write("FIO is required to run IO tests.\n")
@@ -121,14 +121,14 @@ def CheckAIOLimits():
     # can't run due to the AIO setting later on.
     try:
         code, out, err = Run(['cat', '/proc/sys/fs/aio-max-nr'])
-        if (code == 0):
+        if code == 0:
             aiomaxnr = int(out.split("\n")[0].rstrip())
             if aiomaxnr < int(aioNeeded):
                 sys.stderr.write("ERROR: The kernel's maximum outstanding async IO setting (aio-max-nr) is too\n")
                 sys.stderr.write("       low to complete the test run.  Required value is " + str(aioNeeded) + ", current is " + str(aiomaxnr) +"\n")
                 sys.stderr.write("       To fix this temporarially, please execute the following command:\n")
                 sys.stderr.write("            sudo sysctl -w fs.aio-max-nr=" + str(aioNeeded) +"\n")
-                sys.stderr.write("Unable to continue.  Exiting.\n");
+                sys.stderr.write("Unable to continue.  Exiting.\n")
                 sys.exit(2)
     except:
         pass
@@ -184,7 +184,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     cluster = args.cluster
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
-        nodes = physDrive.split(",");
+        nodes = physDrive.split(",")
         for node in nodes:
             physDriveDict[node.split(":")[0]] = node.split(":")[1]
         physDrive = nodes[0].split(":")[1]
@@ -200,11 +200,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     # Sanity check that the selected drive is not mounted by parsing mounts
     # This is not guaranteed to catch all as there's just too many different
     # naming conventions out there.  Let's cover simple HDD/SSD/NVME patterns
-    if ( re.match('.*p?[1-9][0-9]*$', physDrive) and
-         not re.match('.*/nvme[0-9]+n[1-9][0-9]*$', physDrive) ):
-        pdispart = True
-    else:
-        pdispart = False
+    pdispart = (re.match('.*p?[1-9][0-9]*$', physDrive) and
+         not re.match('.*/nvme[0-9]+n[1-9][0-9]*$', physDrive))
     hit = ""
     with open("/proc/mounts", "r") as f:
         mounts = f.readlines()
@@ -222,7 +219,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
             else:
                 # Need to see if mounted partition is on a raw device being tested
                 chkdev = re.sub('p?[1-9][0-9]*$', '', dev)
-        if chkdev == physDrive: hit = dev + " on " + mnt
+        if chkdev == physDrive:
+            hit = dev + " on " + mnt
     if hit != "" :
         print "ERROR:  Mounted volume '" + str(hit) + "' is on same device",
         print "as tested device '" + str(physDrive) + "'.  ABORTING."
@@ -307,8 +305,8 @@ def CollectDriveInfo():
         code, sdparm, err = Run(sdparmcmd)
         lines = sdparm.split("\n")
         if len(lines) == 4:
-            model=re.sub("\s+", " ", lines[0].split(":")[1].lstrip().rstrip())
-            serial = re.sub("\s+", " ", lines[2].lstrip().rstrip())
+            model=re.sub('\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
+            serial = re.sub('\s+', " ", lines[2].lstrip().rstrip())
         else:
             print "Unable to identify drive using sdparm. Continuing."
     except:
@@ -342,7 +340,8 @@ def CSVInfoHeader(f):
 def SetupFiles():
     """Set up names for all output/input files, place headers on CSVs."""
     global ds, details, testcsv, timeseriescsv, odssrc, odsdest
-    global physDriveBase, fioVerString, outputDest
+    global physDriveBase, fioVerString, outputDest, timeseriesclatcsv
+    global timeseriesslatcsv
 
     # Datestamp for run output files
     ds = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -372,10 +371,15 @@ def SetupFiles():
                "Bandwidth (MB/s),Read Latency (us),Write Latency (us)",
                testcsv)
     timeseriescsv = details + "/ezfio_timeseries_"+suffix+".csv"
-    if os.path.exists(timeseriescsv):
-        os.unlink(timeseriescsv)
-    CSVInfoHeader(timeseriescsv)
-    AppendFile("IOPS", timeseriescsv) # Add IOPS header
+    timeseriesclatcsv = details + "/ezfio_timeseriesclat_"+suffix+".csv"
+    timeseriesslatcsv = details + "/ezfio_timeseriesslat_"+suffix+".csv"
+    for f in [timeseriescsv, timeseriesclatcsv, timeseriesslatcsv]:
+        if os.path.exists(f):
+            os.unlink(f)
+        CSVInfoHeader(f)
+    AppendFile(",".join(["IOPS"] + physDriveDict.keys()), timeseriescsv) # Add IOPS header
+    AppendFile(",".join(["CLAT"] + physDriveDict.keys()), timeseriesclatcsv) # Add IOPS header
+    AppendFile(",".join(["SLAT"] + physDriveDict.keys()), timeseriesslatcsv) # Add IOPS header
 
     # ODS input and output files
     odssrc = os.path.dirname( os.path.realpath(__file__) ) + "/original.ods"
@@ -396,6 +400,7 @@ class FIOError(Exception):
         stdout  -- STDOUT output from FIO
     """
     def __init__(self, cmdline, code, stderr, stdout):
+        super(FIOError, self).__init__()
         self.cmdline = cmdline
         self.code = code
         self.stderr = stderr
@@ -546,7 +551,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     def plat_idx_to_val(idx, FIO_IO_U_PLAT_BITS=6, FIO_IO_U_PLAT_VAL=64):
         # MSB <= (FIO_IO_U_PLAT_BITS-1), cannot be rounded off. Use
         # all bits of the sample as index
-        if (idx < (FIO_IO_U_PLAT_VAL << 1)):
+        if idx < (FIO_IO_U_PLAT_VAL << 1):
             return idx
         # Find the group and compute the minimum value of that group
         error_bits = (idx >> FIO_IO_U_PLAT_BITS) - 1
@@ -554,20 +559,20 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         # Find its bucket number of the group
         k = idx % FIO_IO_U_PLAT_VAL
         # Return the mean of the range of the bucket
-        return (base + ((k + 0.5) * (1 << error_bits)))
+        return base + ((k + 0.5) * (1 << error_bits))
 
     def WriteExceedance(client, rdwr, outfile):
         """Generate an exceedance CSV for read or write from JSON output."""
         global fioOutputFormat
-        if (fioOutputFormat == "json"):
+        if fioOutputFormat == "json":
             return # This data not present in JSON format, only JSON+
         ios = client[rdwr]['total_ios']
         bins = client[rdwr]['clat_ns']['bins']
         if ios:
-            runttl = 0;
+            runttl = 0
             # This was changed in 2.99 to be in nanoseconds and to discard the crazy _bits magic
             if float(fioVerString.split('-')[1]) >= 2.99:
-                lat_ns = [];
+                lat_ns = []
                 # JSON dict has keys of type string, need a sorted integer list for our work...
                 for entry in bins:
                     lat_ns.append(int(entry))
@@ -575,7 +580,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                     lat_us = float(entry) / 1000.0
                     cnt = int(bins[str(entry)])
                     runttl += cnt
-                    pctile = 1.0 - float(runttl) / float(ios);
+                    pctile = 1.0 - float(runttl) / float(ios)
                     if cnt > 0:
                         AppendFile(",".join((str(lat_us), str(pctile))), outfile)
             else:
@@ -584,7 +589,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                 for b in range(0, int(client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_NR'])):
                     cnt = int(client[rdwr]['clat']['bins'][str(b)])
                     runttl += cnt
-                    pctile = 1.0 - float(runttl) / float(ios);
+                    pctile = 1.0 - float(runttl) / float(ios)
                     if cnt > 0:
                         AppendFile(",".join((str(plat_idx_to_val(b, plat_bits, plat_val)), str(pctile))), outfile)
 
@@ -616,6 +621,50 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         jobfile.write("offset=" +  str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
+
+    def CombineThreadOutputs(suffix, outcsv, avg):
+        # Keep a running sum of IOPS as seen by all servers
+        # The lists may be called "iops" but the same works for clat/slat
+        iops = [0] * (runtime + extra_runtime)
+        host_iops = OrderedDict()
+        filecnt = 0
+        for host in physDriveDict.keys():
+            host_iops[host] = [0] * (runtime + extra_runtime)
+            for filename in glob.glob( testfile + str(suffix) + '.*.log.' + host):
+                filecnt = filecnt + 1
+                catcmdline = [ 'cat', filename ]
+                catcode, catout, caterr = Run(catcmdline)
+                if catcode != 0:
+                    AppendFile("ERROR", testcsv)
+                    raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
+                lines = catout.split("\n")
+                # Set time 0 IOPS to first values
+                riops = 0
+                wiops = 0
+                nexttime = 0
+                for x in range(0, runtime + extra_runtime):
+                    iops[x] = iops[x] + riops + wiops
+                    host_iops[host][x] = host_iops[host][x] + riops + wiops
+                    while len(lines)>1 and (nexttime < x):
+                        parts = lines[0].split(",")
+                        nexttime = float(parts[0]) / 1000.0
+                        if int(lines[0].split(",")[2]) == 1:
+                            wiops = int(parts[1])
+                        else:
+                            riops = int(parts[1])
+                        lines = lines[1:]
+
+        # Generate the combined CSV
+        with open(outcsv, 'a+') as f:
+            for cnt in range(int(extra_runtime/2), runtime + extra_runtime):
+                if avg:
+                    line = str(float(iops[cnt])/float(filecnt))
+                else:
+                    line = str(iops[cnt])
+                if len(physDriveDict.keys()) > 1:
+                    for host in physDriveDict.keys():
+                        line = line + "," + str(host_iops[host][cnt])
+                f.write(line + "\n")
 
     # Output file names
     testfile = TestName(seqrand, wmix, bs, threads, iodepth)
@@ -655,9 +704,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                 AppendFile(txt, testfile)
             jobfile = jobfile + [ newjob ]
             if iops_log:
-                AppendFile("write_iops_log=" + testfile , newjob.name);
-                AppendFile("log_avg_msec=1000", newjob.name);
-                AppendFile("log_unix_epoch=0", newjob.name);
+                AppendFile("write_iops_log=" + testfile , newjob.name)
+                AppendFile("write_lat_log=" + testfile , newjob.name)
+                AppendFile("log_avg_msec=1000", newjob.name)
+                AppendFile("log_unix_epoch=0", newjob.name)
 
     cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
 
@@ -665,9 +715,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     # Check that we can actually do this size IO, OTW return 0 for all
     skiptest = False
     code, out, err = Run(['blockdev', '--getpbsz', str(physDrive)])
-    if code == 0: 
+    if code == 0:
         iomin = int(out.split("\n")[0])
-        if int(bs) < iomin: skiptest = True
+        if int(bs) < iomin:
+            skiptest = True
     # Silently ignore failure to return min block size, FIO will fail and
     # we'll catch that a little later.
     if skiptest:
@@ -697,42 +748,9 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     if iops_log and not cluster:
         iostat.join()
     elif iops_log and cluster:
-        # Keep a running sum of IOPS as seen by all servers
-        iops = [0] * (runtime + extra_runtime)
-        host_iops = OrderedDict()
-        for host in physDriveDict.keys():
-            host_iops[host] = [0] * (runtime + extra_runtime)
-            for filename in glob.glob( testfile + '_iops.*.log.' + host):
-                catcmdline = [ 'cat', filename ]
-                catcode, catout, caterr = Run(catcmdline)
-                if catcode != 0:
-                    AppendFile("ERROR", testcsv)
-                    raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
-                lines = catout.split("\n")
-                # Set time 0 IOPS to first values
-                riops = 0
-                wiops = 0
-                nexttime = 0
-                for x in range(0, runtime + extra_runtime):
-                    iops[x] = iops[x] + riops + wiops
-                    host_iops[host][x] = host_iops[host][x] + riops + wiops
-                    while len(lines)>1 and (nexttime < x):
-                        parts = lines[0].split(",")
-                        nexttime = float(parts[0]) / 1000.0
-                        if int(lines[0].split(",")[2]) == 1:
-                            wiops = int(parts[1])
-                        else:
-                            riops = int(parts[1])
-                        lines = lines[1:]
-
-        # Generate the combined CSV
-        with open(timeseriescsv, 'w') as f:
-            for cnt in range(int(extra_runtime/2), runtime + extra_runtime):
-                line = str(iops[cnt])
-                if len(physDriveDict.keys()) > 1:
-                    for host in physDriveDict.keys():
-                        line = line + "," + str(host_iops[host][cnt])
-                f.write(line + "\n")
+        CombineThreadOutputs('_iops', timeseriescsv, False)
+        CombineThreadOutputs('_clat', timeseriesclatcsv, True)
+        CombineThreadOutputs('_slat', timeseriesslatcsv, True)
 
     rdiops = 0
     wriops = 0
@@ -756,8 +774,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         else:
             client = j['jobs'][0]
 
-        rdiops = float(client['read']['iops']);
-        wriops = float(client['write']['iops']);
+        rdiops = float(client['read']['iops'])
+        wriops = float(client['write']['iops'])
 
         # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
         try:
@@ -1017,7 +1035,7 @@ def RunAllTests():
             o['cmdline'](o)
         else:
             # This is a real test job, run it in a thread
-            if (sys.stdout.isatty()):
+            if sys.stdout.isatty():
                 print fmtstr.format(o['desc'], "Runtime", "00:00:00", "..."),
                 print "\r",
             else:
@@ -1032,7 +1050,7 @@ def RunAllTests():
                 dstr = "{0:02}:{1:02}:{2:02}".format(delta.seconds / 3600,
                                                      (delta.seconds%3600)/60,
                                                      delta.seconds % 60)
-                if (sys.stdout.isatty()):
+                if sys.stdout.isatty():
                     # Blink runtime to make it obvious stuff is happening
                     if (delta.seconds % 2) != 0:
                         print fmtstr.format(o['desc'], "Runtime", dstr, "..."),
@@ -1048,7 +1066,7 @@ def RunAllTests():
                 ret_mbps = "{:0,.2f}".format(float(ret_mbps))
             except:
                 pass
-            if (sys.stdout.isatty()):
+            if sys.stdout.isatty():
                 print fmtstr.format(o['desc'], ret_mbps, ret_iops, ret_lat)
             else:
                 print " " + resfmt.format(o['desc'], ret_mbps, ret_iops, ret_lat)
@@ -1223,13 +1241,15 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         return csv
 
     global odssrc, timeseriescsv, testcsv, physDrive, testcapacity, model, testoffset
-    global serial, uname, fioVerString, odsdest
+    global serial, uname, fioVerString, odsdest, timeseriesclatcsv, timeseriesslatcsv
 
     xmlsrc = GetContentXMLFromODS( odssrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Timeseries", timeseriescsv, xmlsrc )
+    xmlsrc = ReplaceSheetWithCSV_regex( "TimeseriesCLAT", timeseriesclatcsv, xmlsrc )
+    xmlsrc = ReplaceSheetWithCSV_regex( "TimeseriesSLAT", timeseriesslatcsv, xmlsrc )
     xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
     # Potentially add exceedance data if we have it
-    if (fioOutputFormat == "json+"):
+    if fioOutputFormat == "json+":
         csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30" )
         xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", csv, xmlsrc )
     # Remove draw:image references to deleted binary previews
@@ -1277,6 +1297,8 @@ pwd = "" # $CWD
 details = ""       # Test details directory
 testcsv = ""       # Intermediate test output CSV file
 timeseriescsv = "" # Intermediate iostat output CSV file
+timeseriesclatcsv = "" # Intermediate iostat output CSV file
+timeseriesslatcsv = "" # Intermediate iostat output CSV file
 exceedancecsv = "" # Intermediate exceedance output CSV
 
 odssrc = ""  # Original ODS spreadsheet file
