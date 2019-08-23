@@ -27,6 +27,7 @@ via "sudo ./ezfio.py"
 Please be sure to have FIO installed, or you will be prompted to install
 and re-run the script."""
 
+from __future__ import print_function
 import argparse
 import base64
 from collections import OrderedDict
@@ -61,7 +62,7 @@ def Run(cmd):
     out = proc.stdout.read()
     err = proc.stderr.read()
     code = proc.wait()
-    return code, out, err
+    return int(code), out.decode('UTF-8'), err.decode('UTF-8')
 
 
 def CheckAdmin():
@@ -104,8 +105,8 @@ def CheckFIOVersion():
             sys.stderr.write("version 2.0 or later required.  Exiting.\n")
             sys.exit(2)
     except:
-        sys.stderr.write("ERROR: Unable to determine version of fio ")
-        sys.stderr.write("installed.  Exiting.\n")
+        sys.stderr.write("ERROR: Unable to determine version of fio " +
+                          "installed.  Exiting.\n")
         sys.exit(2)
     # Now see if we can make exceedance charts
     # Can't just try --output-format=json+ because the FIO in Ubuntu 16.04
@@ -200,12 +201,12 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
             physDriveDict[node.split(":")[0]] = node.split(":")[1]
         physDrive = nodes[0].split(":")[1]
     if (utilization < 1) or (utilization > 100):
-        print "ERROR:  Utilization must be between 1...100"
+        print("ERROR:  Utilization must be between 1...100")
         parser.print_help()
         sys.exit(1)
 
     if (offset < 0) or (offset > 99) or (offset+utilization > 100):
-        print "ERROR:  offset must be between 0...99 while offset + utilization <= 100"
+        print("ERROR:  offset must be between 0...99 while offset + utilization <= 100")
         parser.print_help()
         sys.exit(1)
     # Sanity check that the selected drive is not mounted by parsing mounts
@@ -233,9 +234,18 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
         if chkdev == physDrive:
             hit = dev + " on " + mnt
     if hit != "":
-        print "ERROR:  Mounted volume '" + str(hit) + "' is on same device",
-        print "as tested device '" + str(physDrive) + "'.  ABORTING."
+        print("ERROR:  Mounted volume '" + str(hit) + "' is on same device" +
+              "as tested device '" + str(physDrive) + "'.  ABORTING.")
         sys.exit(2)
+
+
+def grep(inlist, regex):
+    """Implement grep in a non-Pythonic way to make it comprehensible to humans"""
+    out = []
+    for i in inlist:
+        if re.search(regex, i):
+            out = out + [i]
+    return out
 
 
 def CollectSystemInfo():
@@ -246,41 +256,35 @@ def CollectSystemInfo():
     cpuinfo = cpuinfo.split("\n")
     if 'ppc64' in uname:
         # Implement grep and sed in Python...
-        cpu = filter(lambda x: re.search(r'model', x), cpuinfo)[
-            0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
-        cpuCores = len(filter(lambda x: re.search('processor', x), cpuinfo))
+        cpu = grep(cpuinfo, r'model')[0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
+        cpuCores = len(grep(cpuinfo, r'processor'))
         try:
             code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
-            cpuFreqMHz = int(round(float(filter(lambda x: re.search(
-                'Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+            cpuFreqMHz = int(round(float(grep(dmidecode.split("\n"), r'Current Speed')[0].rstrip().lstrip().split(" ")[2])))
         except:
-            cpuFreqMHz = int(round(
-                float(filter(lambda x: re.search('clock', x), cpuinfo)[0].split(': ')[1][:-3])))
+            cpuFreqMHz = int(round(float(grep(cpuinfo, r'clock')[0].split(': ')[1][:-3])))
     else:
-        cpu = filter(lambda x: re.search(r'model name', x), cpuinfo)[
-            0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
-        cpuCores = len(filter(lambda x: re.search('model name', x), cpuinfo))
+        model_names = grep(cpuinfo, r'model name')
+        cpu = model_names[0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
+        cpuCores = len(model_names)
         try:
             code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
-            cpuFreqMHz = int(round(float(filter(lambda x: re.search(
-                'Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+            cpuFreqMHz = int(round(float(grep(dmidecode.split("\n"), r'Current Speed')[0].rstrip().lstrip().split(" ")[2])))
         except:
-            cpuFreqMHz = int(round(
-                float(filter(lambda x: re.search('cpu MHz', x), cpuinfo)[0].split(': ')[1])))
+            cpuFreqMHz = int(round(float(grep(cpuinfo, r'cpu MHz')[0].split(': ')[1])))
 
 
 def VerifyContinue():
     """User's last chance to abort the test.  Exit if they don't agree."""
     if not yes:
-        print "-" * 75
-        print "WARNING! " * 9
-        print "THIS TEST WILL DESTROY ANY DATA AND FILESYSTEMS ON ",
-        print physDrive + "\n"
+        print("-" * 75)
+        print("WARNING! " * 9)
+        print("THIS TEST WILL DESTROY ANY DATA AND FILESYSTEMS ON " + physDrive)
         cont = raw_input("Please type the word \"yes\" and hit return to " +
-                         "continue, or anything else to abort.\n")
-        print "-" * 75 + "\n"
+                         "continue, or anything else to abort.")
+        print("-" * 75 + "\n")
         if cont != "yes":
-            print "Performance test aborted, drive is untouched.\n"
+            print("Performance test aborted, drive is untouched.")
             sys.exit(1)
 
 
@@ -294,13 +298,14 @@ def CollectDriveInfo():
         code, physDriveBytes, err = Run(['blockdev', '--getsize64', physDrive])
         if code != 0:
             raise Exception("Can't get drive size for " + physDrive)
-        physDriveGB = (long(physDriveBytes))/(1000 * 1000 * 1000)
-        physDriveGiB = (long(physDriveBytes))/(1024 * 1024 * 1024)
-        testcapacity = (physDriveGiB * utilization) / 100
-        testoffset = (physDriveGiB * offset) / 100
+        physDriveBytes = physDriveBytes.split('\n')[0]
+        physDriveBytes = int(physDriveBytes)
+        physDriveGB = int(physDriveBytes / (1000 * 1000 * 1000))
+        physDriveGiB = int(physDriveBytes / (1024 * 1024 * 1024))
+        testcapacity = int((physDriveGiB * utilization) / 100)
+        testoffset = int((physDriveGiB * offset) / 100)
     except:
-        print "ERROR: Can't get '" + physDrive + "' size. ",
-        print "Incorrect device name?"
+        print("ERROR: Can't get '" + physDrive + "' size. Incorrect device name?")
         sys.exit(1)
     # These are nice to have, but we can run without it
     model = "UNKNOWN"
@@ -327,9 +332,9 @@ def CollectDriveInfo():
                 r'\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
             serial = re.sub(r'\s+', " ", lines[2].lstrip().rstrip())
         else:
-            print "Unable to identify drive using sdparm. Continuing."
+            print("Unable to identify drive using sdparm. Continuing.")
     except:
-        print "Install sdparm to allow model/serial extraction. Continuing."
+        print("Install sdparm to allow model/serial extraction. Continuing.")
 
 
 def CSVInfoHeader(f):
@@ -396,7 +401,7 @@ def SetupFiles():
         if os.path.exists(f):
             os.unlink(f)
         CSVInfoHeader(f)
-    AppendFile(",".join(["IOPS"] + physDriveDict.keys()),
+    AppendFile(",".join(["IOPS"] + list(physDriveDict.keys())),
                timeseriescsv)  # Add IOPS header
     hdr = ""
     for host in physDriveDict.keys():
@@ -410,7 +415,7 @@ def SetupFiles():
     # ODS input and output files
     odssrc = os.path.dirname(os.path.realpath(__file__)) + "/original.ods"
     if not os.path.exists(odssrc):
-        print "ERROR: Can't find original ODS spreadsheet '" + odssrc + "'. ",
+        print("ERROR: Can't find original ODS spreadsheet '" + odssrc + "'.")
         sys.exit(1)
     odsdest = outputDest + "/ezfio_results_"+suffix+".ods"
     if os.path.exists(odsdest):
@@ -450,7 +455,7 @@ def SequentialConditioning():
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
-        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
         jobfile.write("[SeqCond]\n")
         # Note that we can't use regular test runner because this test needs
         # to run for a specified # of bytes, not a specified # of seconds.
@@ -502,7 +507,7 @@ def RandomConditioning():
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the random jobfile"""
-        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
         jobfile.write("[RandCond]\n")
         # Note that we can't use regular test runner because this test needs
         # to run for a specified # of bytes, not a specified # of seconds.
@@ -567,16 +572,16 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
             statpath = "/sys/block/"+base+"/stat"
         with open(statpath, "r") as f:
             stat = f.read().rstrip().split()
-            readstart = long(stat[0])
-            writestart = long(stat[4])
+            readstart = int(stat[0])
+            writestart = int(stat[4])
         timeseries = open(timeseriescsv, "a")
         now = starttime
         while now < stoptime:
             time.sleep(1)
             with open(statpath, "r") as f:
                 stat = f.read().rstrip().split()
-                readend = long(stat[0])
-                writeend = long(stat[4])
+                readend = int(stat[0])
+                writeend = int(stat[4])
             iops = (readend - readstart) + (writeend - writestart)
             readstart = readend
             writestart = writeend
@@ -658,7 +663,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     def GenerateJobfile(rw, wmix, bs, drive, testcapacity, runtime, threads, iodepth, testoffset):
         """Make a jobfile for the specified test parameters"""
         global verify
-        jobfile = tempfile.NamedTemporaryFile(delete=False)
+        jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
         jobfile.write("[test]\n")
         jobfile.write("readwrite=" + str(rw) + "\n")
         jobfile.write("rwmixwrite=" + str(wmix) + "\n")
@@ -1085,44 +1090,43 @@ def RunAllTests():
             ret_mbps = list(val)[0][1]
             ret_lat = list(val)[0][2]
         except FIOError as e:
-            print "\nFIO Error!\n" + e.cmdline + "\nSTDOUT:\n" + e.stdout
-            print "STDERR:\n" + e.stderr
+            print("\nFIO Error!\n" + e.cmdline + "\nSTDOUT:\n" + e.stdout)
+            print("STDERR:\n" + e.stderr)
             raise
         except:
-            print "\nUnexpected error while running FIO job."
+            print("\nUnexpected error while running FIO job.")
             raise
 
-    print "*" * len(fmtstr.format("", "", "", ""))
-    print "ezFio test parameters:\n"
+    print("*" * len(fmtstr.format("", "", "", "")))
+    print("ezFio test parameters:\n")
 
     fmtinfo = "{0: >20}: {1}"
-    print fmtinfo.format("Drive", str(physDriveTxt))
-    print fmtinfo.format("Model", str(model))
-    print fmtinfo.format("Serial", str(serial))
-    print fmtinfo.format("AvailCapacity", str(physDriveGiB) + " GiB")
-    print fmtinfo.format("TestedCapacity", str(testcapacity) + " GiB")
-    print fmtinfo.format("TestedOffset", str(testoffset) + " GiB")
-    print fmtinfo.format("CPU", str(cpu))
-    print fmtinfo.format("Cores", str(cpuCores))
-    print fmtinfo.format("Frequency", str(cpuFreqMHz))
-    print fmtinfo.format("FIO Version", str(fioVerString))
+    print(fmtinfo.format("Drive", str(physDriveTxt)))
+    print(fmtinfo.format("Model", str(model)))
+    print(fmtinfo.format("Serial", str(serial)))
+    print(fmtinfo.format("AvailCapacity", str(physDriveGiB) + " GiB"))
+    print(fmtinfo.format("TestedCapacity", str(testcapacity) + " GiB"))
+    print(fmtinfo.format("TestedOffset", str(testoffset) + " GiB"))
+    print(fmtinfo.format("CPU", str(cpu)))
+    print(fmtinfo.format("Cores", str(cpuCores)))
+    print(fmtinfo.format("Frequency", str(cpuFreqMHz)))
+    print(fmtinfo.format("FIO Version", str(fioVerString)))
 
-    print "\n"
-    print fmtstr.format("Test Description", "BW(MB/s)", "IOPS", "Lat(us)")
-    print fmtstr.format("-"*maxlen, "-"*8, "-"*9, "-"*8)
+    print("\n")
+    print(fmtstr.format("Test Description", "BW(MB/s)", "IOPS", "Lat(us)"))
+    print(fmtstr.format("-"*maxlen, "-"*8, "-"*9, "-"*8))
     for o in oc:
         if o['desc'] == "":
             # This is a header-printing job, don't thread out
-            print "\n" + fmtstr.format("---"+o['name']+"---", "", "", "")
+            print("\n" + fmtstr.format("---"+o['name']+"---", "", "", ""))
             sys.stdout.flush()
             o['cmdline'](o)
         else:
             # This is a real test job, run it in a thread
             if sys.stdout.isatty():
-                print fmtstr.format(o['desc'], "Runtime", "00:00:00", "..."),
-                print "\r",
+                print(fmtstr.format(o['desc'], "Runtime", "00:00:00", "..."), end='\r')
             else:
-                print descfmt.format(o['desc']),
+                print(descfmt.format(o['desc']), end='')
             sys.stdout.flush()
             starttime = datetime.datetime.now()
             job = threading.Thread(target=JobWrapper, kwargs=(o))
@@ -1130,16 +1134,15 @@ def RunAllTests():
             while job.isAlive():
                 now = datetime.datetime.now()
                 delta = now - starttime
-                dstr = "{0:02}:{1:02}:{2:02}".format(delta.seconds / 3600,
-                                                     (delta.seconds % 3600)/60,
-                                                     delta.seconds % 60)
+                dstr = "{0:02}:{1:02}:{2:02}".format(int(delta.seconds / 3600),
+                                                     int((delta.seconds % 3600)/60),
+                                                     int(delta.seconds % 60))
                 if sys.stdout.isatty():
                     # Blink runtime to make it obvious stuff is happening
                     if (delta.seconds % 2) != 0:
-                        print fmtstr.format(o['desc'], "Runtime", dstr, "..."),
-                        print "\r",
+                        print(fmtstr.format(o['desc'], "Runtime", dstr, "..."), end='\r')
                     else:
-                        print fmtstr.format(o['desc'], "", dstr, "") + "\r",
+                        print(fmtstr.format(o['desc'], "", dstr, ""), end='\r')
                 sys.stdout.flush()
                 time.sleep(1)
             job.join()
@@ -1150,14 +1153,14 @@ def RunAllTests():
             except:
                 pass
             if sys.stdout.isatty():
-                print fmtstr.format(o['desc'], ret_mbps, ret_iops, ret_lat)
+                print(fmtstr.format(o['desc'], ret_mbps, ret_iops, ret_lat))
             else:
-                print " " + resfmt.format(o['desc'],
-                                          ret_mbps, ret_iops, ret_lat)
+                print(" " + resfmt.format(o['desc'],
+                                          ret_mbps, ret_iops, ret_lat))
             sys.stdout.flush()
             # On any error abort the test, all future results could be invalid
             if ret_mbps == "ERROR":
-                print "ERROR DETECTED, ABORTING TEST RUN."
+                print("ERROR DETECTED, ABORTING TEST RUN.")
                 sys.exit(2)
 
 
@@ -1167,7 +1170,7 @@ def GenerateResultODS():
     def GetContentXMLFromODS(odssrc):
         """Extract content.xml from an ODS file, where the sheet lives."""
         ziparchive = zipfile.ZipFile(odssrc)
-        content = ziparchive.read("content.xml")
+        content = ziparchive.read("content.xml").decode('UTF-8')
         content = content.replace("\n", "")
         return content
 
@@ -1178,7 +1181,7 @@ def GenerateResultODS():
         newt += '<table:table-column table:style-name="co1" '
         newt += 'table:default-cell-style-name="Default"/>'
         # Insert the rows, one entry at a time
-        with open(csvName) as f:
+        with open(csvName, 'r') as f:
             for line in f:
                 line = line.rstrip()
                 newt += '<table:table-row table:style-name="ro1">'
@@ -1255,13 +1258,13 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 zadst.writestr("content.xml", xmltext)
             elif ("Object" in entry) and ("content.xml" in entry):
                 # Remove <table:table table:name="local-table"> table
-                rdbytes = zasrc.read(entry)
+                rdbytes = zasrc.read(entry).decode('UTF-8')
                 outbytes = re.sub(
                     '<table:table table:name="local-table">.*</table:table>', "", rdbytes)
                 zadst.writestr(entry, outbytes)
             elif entry == "META-INF/manifest.xml":
                 # Remove ObjectReplacements from the list
-                rdbytes = zasrc.read(entry)
+                rdbytes = zasrc.read(entry).decode('UTF-8')
                 outbytes = ""
                 lines = rdbytes.split("\n")
                 for line in lines:
@@ -1419,4 +1422,4 @@ if __name__ == "__main__":
     RunAllTests()
     GenerateResultODS()
 
-    print "\nCOMPLETED!\nSpreadsheet file: " + odsdest
+    print("\nCOMPLETED!\nSpreadsheet file: " + odsdest)
