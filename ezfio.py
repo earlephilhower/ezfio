@@ -89,7 +89,7 @@ def FindFIO():
 def CheckFIOVersion():
     """Check that we have a version of FIO installed that we can use."""
     global fio, fioVerString, fioOutputFormat
-    code, out, err = Run( [fio, '--version'] )
+    code, out, err = Run([fio, '--version'])
     try:
         fioVerString = out.split('\n')[0].rstrip()
         ver = out.split('\n')[0].rstrip().split('-')[1].split('.')[0]
@@ -106,7 +106,7 @@ def CheckFIOVersion():
     # repo doesn't understand it and *silently ignores ir*.  Instead, use
     # the help output to see if "json+" exists at all...
     try:
-        code, out, err = Run( [fio, '--help'] )
+        code, out, err = Run([fio, '--help'])
         if (code == 0) and ("json+" in out):
             fioOutputFormat = "json+"
     except:
@@ -305,8 +305,8 @@ def CollectDriveInfo():
         code, sdparm, err = Run(sdparmcmd)
         lines = sdparm.split("\n")
         if len(lines) == 4:
-            model=re.sub('\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
-            serial = re.sub('\s+', " ", lines[2].lstrip().rstrip())
+            model = re.sub(r'\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
+            serial = re.sub(r'\s+', " ", lines[2].lstrip().rstrip())
         else:
             print "Unable to identify drive using sdparm. Continuing."
     except:
@@ -359,7 +359,7 @@ def SetupFiles():
         shutil.rmtree(details)
     os.makedirs(details)
     # Copy this script into it for posterity
-    shutil.copyfile(__file__, details + "/" + os.path.basename(__file__) )
+    shutil.copyfile(__file__, details + "/" + os.path.basename(__file__))
 
     # Files we're going to generate, encode some system info in the names
     # If the output files already exist, erase them
@@ -378,11 +378,15 @@ def SetupFiles():
             os.unlink(f)
         CSVInfoHeader(f)
     AppendFile(",".join(["IOPS"] + physDriveDict.keys()), timeseriescsv) # Add IOPS header
-    AppendFile(",".join(["CLAT"] + physDriveDict.keys()), timeseriesclatcsv) # Add IOPS header
-    AppendFile(",".join(["SLAT"] + physDriveDict.keys()), timeseriesslatcsv) # Add IOPS header
+    hdr = ""
+    for host in physDriveDict.keys():
+        hdr = hdr + ',' + host + "-read"
+        hdr = hdr + ',' + host + "-write"
+    AppendFile('CLAT-read,CLAT-write,' + hdr, timeseriesclatcsv) # Add IOPS header
+    AppendFile('SLAT-read,SLAT-write,' + hdr, timeseriesslatcsv) # Add IOPS header
 
     # ODS input and output files
-    odssrc = os.path.dirname( os.path.realpath(__file__) ) + "/original.ods"
+    odssrc = os.path.dirname(os.path.realpath(__file__)) + "/original.ods"
     if not os.path.exists(odssrc):
         print "ERROR: Can't find original ODS spreadsheet '" + odssrc + "'. ",
         sys.exit(1)
@@ -622,15 +626,18 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         jobfile.close()
         return jobfile
 
-    def CombineThreadOutputs(suffix, outcsv, avg):
+    def CombineThreadOutputs(suffix, outcsv, lat):
         # Keep a running sum of IOPS as seen by all servers
         # The lists may be called "iops" but the same works for clat/slat
         iops = [0] * (runtime + extra_runtime)
+        iops_w = [0] * (runtime + extra_runtime) # For latenvies, need to keep the _w and _r separate
         host_iops = OrderedDict()
+        host_iops_w = OrderedDict()
         filecnt = 0
         for host in physDriveDict.keys():
             host_iops[host] = [0] * (runtime + extra_runtime)
-            for filename in glob.glob( testfile + str(suffix) + '.*.log.' + host):
+            host_iops_w[host] = [0] * (runtime + extra_runtime)
+            for filename in glob.glob(testfile + str(suffix) + '.*.log.' + host):
                 filecnt = filecnt + 1
                 catcmdline = [ 'cat', filename ]
                 catcode, catout, caterr = Run(catcmdline)
@@ -643,8 +650,14 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                 wiops = 0
                 nexttime = 0
                 for x in range(0, runtime + extra_runtime):
-                    iops[x] = iops[x] + riops + wiops
-                    host_iops[host][x] = host_iops[host][x] + riops + wiops
+                    if not lat:
+                        iops[x] = iops[x] + riops + wiops
+                        host_iops[host][x] = host_iops[host][x] + riops + wiops
+                    else:
+                        iops[x] = iops[x] + riops
+                        iops_w[x] = iops_w[x] + wiops
+                        host_iops[host][x] = host_iops[host][x] + riops
+                        host_iops_w[host][x] = host_iops_w[host][x] + wiops
                     while len(lines)>1 and (nexttime < x):
                         parts = lines[0].split(",")
                         nexttime = float(parts[0]) / 1000.0
@@ -655,15 +668,20 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                         lines = lines[1:]
 
         # Generate the combined CSV
-        with open(outcsv, 'a+') as f:
+        with open(outcsv, 'a') as f:
             for cnt in range(int(extra_runtime/2), runtime + extra_runtime):
-                if avg:
+                if lat:
                     line = str(float(iops[cnt])/float(filecnt))
+                    line = line + ',' + str(float(iops_w[cnt])/float(filecnt))
                 else:
                     line = str(iops[cnt])
                 if len(physDriveDict.keys()) > 1:
                     for host in physDriveDict.keys():
-                        line = line + "," + str(host_iops[host][cnt])
+                        if lat:
+                            line = line + ',' + str(float(host_iops[host][cnt])/float(filecnt))
+                            line = line + ',' + str(float(host_iops_w[host][cnt])/float(filecnt))
+                        else:
+                            line = line + "," + str(host_iops[host][cnt])
                 f.write(line + "\n")
 
     # Output file names
@@ -787,12 +805,12 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         except:
             wlat = float(client['write']['lat']['mean'])
 
-    iops = "{0:0.0f}".format( rdiops + wriops )
-    mbps = "{0:0.2f}".format((float( (rdiops+wriops) * bs ) /
-                                        ( 1024.0 * 1024.0 )))
+    iops = "{0:0.0f}".format(rdiops + wriops)
+    mbps = "{0:0.2f}".format((float((rdiops+wriops) * bs) /
+                                        (1024.0 * 1024.0)))
     lat = "{0:0.1f}".format(max(rlat, wlat))
 
-    AppendFile( ",".join((str(seqrand), str(wmix), str(bs), str(threads),
+    AppendFile(",".join((str(seqrand), str(wmix), str(bs), str(threads),
                           str(iodepth), str(iops), str(mbps), str(rlat),
                           str(wlat))), testcsv)
 
@@ -801,11 +819,11 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("1,1\n", testfile + ".exc.write.csv")
     else:
         try:
-            WriteExceedance( client, 'read', testfile + ".exc.read.csv")
+            WriteExceedance(client, 'read', testfile + ".exc.read.csv")
         except:
             AppendFile("1,1\n", testfile + ".exc.read.csv")
         try:
-            WriteExceedance( client, 'write', testfile + ".exc.write.csv")
+            WriteExceedance(client, 'write', testfile + ".exc.write.csv")
         except:
             AppendFile("1,1\n", testfile + ".exc.write.csv")
 
@@ -826,8 +844,8 @@ def DefineTests():
         shorttime = int(shorttime / 10)
         longtime = int(longtime / 10)
 
-    def AddTest( name, seqrand, writepct, blocksize, threads, qdperthread,
-                 iops_log, runtime, desc, cmdline ):
+    def AddTest(name, seqrand, writepct, blocksize, threads, qdperthread,
+                 iops_log, runtime, desc, cmdline):
         if threads != "":
             qd = int(threads) * int(qdperthread)
         else:
@@ -860,7 +878,7 @@ def DefineTests():
 
     def AddTestBSShmoo():
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
-                lambda o: {AppendFile(o['name'], testcsv)} )
+                lambda o: {AppendFile(o['name'], testcsv)})
         for bs in bslist:
             desc = testname + ", BS=" + str(bs)
             DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, desc,
@@ -868,7 +886,7 @@ def DefineTests():
 
     def AddTestQDShmoo():
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
-                lambda o: {AppendFile(o['name'], testcsv)} )
+                lambda o: {AppendFile(o['name'], testcsv)})
         for iodepth in qdlist:
             desc = testname + ", QD=" + str(iodepth)
             DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, desc,
@@ -876,20 +894,20 @@ def DefineTests():
 
     def AddTestThreadsShmoo():
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
-                lambda o: { AppendFile(o['name'], testcsv ) } )
+                lambda o: {AppendFile(o['name'], testcsv)})
         for threads in threadslist:
             desc = testname + ", Threads=" + str(threads)
             DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, desc,
                       iops_log, runtime)
 
     AddTest('Sequential Preconditioning', 'Preparation', '', '', '', '', '',
-            '', '', lambda o: {} ) # Only for display on-screen
+            '', '', lambda o: {}) # Only for display on-screen
     AddTest('Sequential Preconditioning', 'Seq Pass 1', '100', '131072', '1',
             '256', False, '', 'Sequential Preconditioning Pass 1',
-            lambda o: {SequentialConditioning()} )
+            lambda o: {SequentialConditioning()})
     AddTest('Sequential Preconditioning', 'Seq Pass 2', '100', '131072', '1',
             '256', False, '', 'Sequential Preconditioning Pass 2',
-            lambda o: {SequentialConditioning()} )
+            lambda o: {SequentialConditioning()})
 
     testname = "Sustained Multi-Threaded Sequential Read Tests by Block Size"
     seqrand = "Seq"
@@ -919,13 +937,13 @@ def DefineTests():
     AddTestBSShmoo()
 
     AddTest('Random Preconditioning', 'Preparation', '', '', '', '', '', '',
-            '', lambda o: {} ) # Only for display on-screen
+            '', lambda o: {}) # Only for display on-screen
     AddTest('Random Preconditioning', 'Rand Pass 1', '100', '4096', '1',
             '256', False, '', 'Random Preconditioning',
-            lambda o: {RandomConditioning()} )
+            lambda o: {RandomConditioning()})
     AddTest('Random Preconditioning', 'Rand Pass 2', '100', '4096', '1',
             '256', False, '', 'Random Preconditioning',
-            lambda o: {RandomConditioning()} )
+            lambda o: {RandomConditioning()})
 
     testname = "Sustained 4KB Random Read Tests by Number of Threads"
     seqrand = "Rand"
@@ -947,7 +965,7 @@ def DefineTests():
 
     testname = "Sustained Perf Stability Test - 4KB Random 30% Write"
     AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
-            lambda o: {AppendFile(o['name'], testcsv)} )
+            lambda o: {AppendFile(o['name'], testcsv)})
     seqrand = "Rand"
     wmix=30
     bs=4096
@@ -1079,9 +1097,9 @@ def RunAllTests():
 def GenerateResultODS():
     """Builds a new ODS spreadsheet w/graphs from generated test CSV files."""
 
-    def GetContentXMLFromODS( odssrc ):
+    def GetContentXMLFromODS(odssrc):
         """Extract content.xml from an ODS file, where the sheet lives."""
-        ziparchive = zipfile.ZipFile( odssrc )
+        ziparchive = zipfile.ZipFile(odssrc)
         content = ziparchive.read("content.xml")
         content = content.replace("\n", "")
         return content
@@ -1131,7 +1149,7 @@ def GenerateResultODS():
         searchstr  = '<table:named-expressions/>'
         return re.sub(searchstr, newt + searchstr, xmltext)
 
-    def UpdateContentXMLToODS_text( odssrc, odsdest, xmltext ):
+    def UpdateContentXMLToODS_text(odssrc, odsdest, xmltext):
         """Replace content.xml in an ODS w/an in-memory copy and write new.
 
         Replace content.xml in an ODS file with in-memory, modified copy and
@@ -1154,7 +1172,7 @@ aXMub3BlbmRvY3VtZW50LnNwcmVhZHNoZWV0UEsBAj8ACgAAAAAA4ps1SIVsOYouAAAALgAAAAgA
 JAAAAAAAAACAAAAAAAAAAG1pbWV0eXBlCgAgAAAAAAABABgAAAyCUsVU0QFH/eNMmlTRAUf940ya
 VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
 """
-        zipbytes = base64.b64decode( mimetypezip )
+        zipbytes = base64.b64decode(mimetypezip)
         with open(odsdest, 'wb') as f:
             f.write(zipbytes)
 
@@ -1166,7 +1184,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
             elif entry.endswith('/') or entry.endswith('\\'):
                 continue
             elif entry == "content.xml":
-                zadst.writestr( "content.xml", xmltext)
+                zadst.writestr("content.xml", xmltext)
             elif ("Object" in entry) and ("content.xml" in entry):
                 # Remove <table:table table:name="local-table"> table
                 rdbytes = zasrc.read(entry)
@@ -1178,7 +1196,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 outbytes = ""
                 lines = rdbytes.split("\n")
                 for line in lines:
-                    if not ( ("ObjectReplacement" in line) or ("Thumbnails" in line) ):
+                    if not (("ObjectReplacement" in line) or ("Thumbnails" in line)):
                         outbytes = outbytes + line + "\n"
                 zadst.writestr(entry, outbytes)
             elif ("Thumbnails" in entry) or ("ObjectReplacement" in entry):
@@ -1211,14 +1229,14 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         files = []
         for qd in qdList:
             try:
-                r = open( TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.read.csv" )
+                r = open(TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.read.csv")
             except:
                 r = None
             try:
-                w = open( TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.write.csv" )
+                w = open(TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.write.csv")
             except:
                 w = None
-            files.append( [ r, w ] )
+            files.append([ r, w ])
         while True:
             all_empty = True
             l = ""
@@ -1235,7 +1253,7 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
                 l += (b + ",", ",,")[not b]
                 l += ','
                 all_empty = all_empty and (not a) and (not b)
-            AppendFile( l, csv )
+            AppendFile(l, csv)
             if all_empty:
                 break
         return csv
@@ -1243,25 +1261,25 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     global odssrc, timeseriescsv, testcsv, physDrive, testcapacity, model, testoffset
     global serial, uname, fioVerString, odsdest, timeseriesclatcsv, timeseriesslatcsv
 
-    xmlsrc = GetContentXMLFromODS( odssrc )
-    xmlsrc = ReplaceSheetWithCSV_regex( "Timeseries", timeseriescsv, xmlsrc )
-    xmlsrc = ReplaceSheetWithCSV_regex( "TimeseriesCLAT", timeseriesclatcsv, xmlsrc )
-    xmlsrc = ReplaceSheetWithCSV_regex( "TimeseriesSLAT", timeseriesslatcsv, xmlsrc )
-    xmlsrc = ReplaceSheetWithCSV_regex( "Tests", testcsv, xmlsrc )
+    xmlsrc = GetContentXMLFromODS(odssrc)
+    xmlsrc = ReplaceSheetWithCSV_regex("Timeseries", timeseriescsv, xmlsrc)
+    xmlsrc = ReplaceSheetWithCSV_regex("TimeseriesCLAT", timeseriesclatcsv, xmlsrc)
+    xmlsrc = ReplaceSheetWithCSV_regex("TimeseriesSLAT", timeseriesslatcsv, xmlsrc)
+    xmlsrc = ReplaceSheetWithCSV_regex("Tests", testcsv, xmlsrc)
     # Potentially add exceedance data if we have it
     if fioOutputFormat == "json+":
-        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30" )
-        xmlsrc = ReplaceSheetWithCSV_regex( "Exceedance", csv, xmlsrc )
+        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30")
+        xmlsrc = ReplaceSheetWithCSV_regex("Exceedance", csv, xmlsrc)
     # Remove draw:image references to deleted binary previews
     xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
     # OpenOffice doesn't recalculate these cells on load?!
-    xmlsrc = xmlsrc.replace( "_DRIVE", str(physDrive) )
-    xmlsrc = xmlsrc.replace( "_TESTCAP", str(testcapacity) )
-    xmlsrc = xmlsrc.replace ( "_MODEL", str(model) )
-    xmlsrc = xmlsrc.replace( "_SERIAL", str(serial) )
-    xmlsrc = xmlsrc.replace( "_OS", str(uname) )
-    xmlsrc = xmlsrc.replace( "_FIO", str(fioVerString) )
-    UpdateContentXMLToODS_text( odssrc, odsdest, xmlsrc )
+    xmlsrc = xmlsrc.replace("_DRIVE", str(physDrive))
+    xmlsrc = xmlsrc.replace("_TESTCAP", str(testcapacity))
+    xmlsrc = xmlsrc.replace("_MODEL", str(model))
+    xmlsrc = xmlsrc.replace("_SERIAL", str(serial))
+    xmlsrc = xmlsrc.replace("_OS", str(uname))
+    xmlsrc = xmlsrc.replace("_FIO", str(fioVerString))
+    UpdateContentXMLToODS_text(odssrc, odsdest, xmlsrc)
 
 
 
