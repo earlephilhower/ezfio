@@ -1,31 +1,31 @@
 #!/usr/bin/python
 
-# ezfio 1.0
-# earle.philhower.iii@hgst.com
-#
-# ------------------------------------------------------------------------
-# ezfio is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 2 of the License, or
-# (at your option) any later version.
-#
-# ezfio is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with ezfio.  If not, see <http://www.gnu.org/licenses/>.
-# ------------------------------------------------------------------------
-#
-# Usage:   ./ezfio.py -d </dev/node> [-u <100..1>]
-# Example: ./ezfio.py -d /dev/nvme0n1 -u 100
-#
-# This script requires root privileges so must be run as "root" or
-# via "sudo ./ezfio.py"
-#
-# Please be sure to have FIO installed, or you will be prompted to install
-# and re-run the script.
+"""ezfio 1.9
+earlephilhower@yahoo.com
+
+------------------------------------------------------------------------
+ezfio is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 2 of the License, or
+(at your option) any later version.
+
+ezfio is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with ezfio.  If not, see <http://www.gnu.org/licenses/>.
+------------------------------------------------------------------------
+
+Usage:   ./ezfio.py -d </dev/node> [-u <100..1>]
+Example: ./ezfio.py -d /dev/nvme0n1 -u 100
+
+This script requires root privileges so must be run as "root" or
+via "sudo ./ezfio.py"
+
+Please be sure to have FIO installed, or you will be prompted to install
+and re-run the script."""
 
 import argparse
 import base64
@@ -46,19 +46,23 @@ import threading
 import time
 import zipfile
 
+
 def AppendFile(text, filename):
     """Equivalent to >> in BASH, append a line to a text file."""
     with open(filename, "a") as f:
         f.write(text)
         f.write("\n")
 
+
 def Run(cmd):
     """Run a cmd[], return the exit code, stdout, and stderr."""
-    proc=subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE)
     out = proc.stdout.read()
     err = proc.stderr.read()
     code = proc.wait()
     return code, out, err
+
 
 def CheckAdmin():
     """Check that we have root privileges for disk access, abort if not."""
@@ -67,6 +71,7 @@ def CheckAdmin():
         sys.stderr.write("access.\nPlease restart this script as root ")
         sys.stderr.write("(sudo) to continue.\n")
         sys.exit(1)
+
 
 def FindFIO():
     """Try the path and the CWD for a FIO executable, return path or exit."""
@@ -85,6 +90,7 @@ def FindFIO():
             sys.stderr.write("The latest versions can be found at ")
             sys.stderr.write("https://github.com/axboe/fio.\n")
             sys.exit(1)
+
 
 def CheckFIOVersion():
     """Check that we have a version of FIO installed that we can use."""
@@ -113,7 +119,6 @@ def CheckFIOVersion():
         pass
 
 
-
 def CheckAIOLimits():
     """Ensure kernel AIO max transactions is large enough to run test."""
     global aioNeeded
@@ -124,10 +129,15 @@ def CheckAIOLimits():
         if code == 0:
             aiomaxnr = int(out.split("\n")[0].rstrip())
             if aiomaxnr < int(aioNeeded):
-                sys.stderr.write("ERROR: The kernel's maximum outstanding async IO setting (aio-max-nr) is too\n")
-                sys.stderr.write("       low to complete the test run.  Required value is " + str(aioNeeded) + ", current is " + str(aiomaxnr) +"\n")
-                sys.stderr.write("       To fix this temporarially, please execute the following command:\n")
-                sys.stderr.write("            sudo sysctl -w fs.aio-max-nr=" + str(aioNeeded) +"\n")
+                sys.stderr.write(
+                    "ERROR: The kernel's maximum outstanding async IO" +
+                    "setting (aio-max-nr) is too\n")
+                sys.stderr.write("       low to complete the test run.  Required value is " + str(
+                    aioNeeded) + ", current is " + str(aiomaxnr) + "\n")
+                sys.stderr.write(
+                    "       To fix this temporarially, please execute the following command:\n")
+                sys.stderr.write(
+                    "            sudo sysctl -w fs.aio-max-nr=" + str(aioNeeded) + "\n")
                 sys.stderr.write("Unable to continue.  Exiting.\n")
                 sys.exit(2)
     except:
@@ -136,12 +146,13 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, physDriveDict, physDriveTxt, utilization, outputDest, offset, cluster, yes, quickie, verify
+    global physDrive, physDriveDict, physDriveTxt, utilization
+    global outputDest, offset, cluster, yes, quickie, verify
     parser = argparse.ArgumentParser(
-                 formatter_class=argparse.RawDescriptionHelpFormatter,
-    description="A tool to easily run FIO to benchmark sustained " \
-                "performance of NVME\nand other types of SSD.",
-    epilog="""
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="A tool to easily run FIO to benchmark sustained "
+        "performance of NVME\nand other types of SSD.",
+        epilog="""
 Requirements:\n
 * Root access (log in as root, or sudo {prog})
 * No filesytems or data on target device
@@ -150,26 +161,26 @@ Requirements:\n
 
 WARNING: All data on the target device will be DESTROYED by this test.""")
     parser.add_argument("--cluster", dest="cluster", action='store_true',
-        help="Run the test on a cluster (--drive in host1:/dev/p1,host2:/dev/ps,...)",
-        required=False)
+                        help="Run the test on a cluster (--drive in "+
+                        "host1:/dev/p1,host2:/dev/ps,...)", required=False)
     parser.add_argument("--verify", dest="verify", action='store_true',
-        help="Have FIO perform data verifications on reads.  May impact performance.",
-        required=False)
-    parser.add_argument("--drive", "-d", dest = "physDrive",
-        help="Device to test (ex: /dev/nvme0n1)", required=True)
+                        help="Have FIO perform data verifications on reads."+
+                        " May impact performance", required=False)
+    parser.add_argument("--drive", "-d", dest="physDrive",
+                        help="Device to test (ex: /dev/nvme0n1)", required=True)
     parser.add_argument("--utilization", "-u", dest="utilization",
-        help="Amount of drive to test (in percent), 1...100", default="100",
-        type=int, required=False)
+                        help="Amount of drive to test (in percent), 1...100",
+                        default="100", type=int, required=False)
     parser.add_argument("--offset", "-s", dest="offset",
-        help="offset from start (in percent), 0...99", default="0",
-        type=int, required=False)
+                        help="offset from start (in percent), 0...99", default="0",
+                        type=int, required=False)
     parser.add_argument("--output", "-o", dest="outputDest",
-        help="Location where results should be saved", required=False)
+                        help="Location where results should be saved", required=False)
     parser.add_argument("--yes", dest="yes", action='store_true',
-        help="Skip the final warning prompt (for scripted tests)",
-        required=False)
+                        help="Skip the final warning prompt (for scripted tests)",
+                        required=False)
     parser.add_argument("--quickie", dest="quickie", help=argparse.SUPPRESS,
-        action='store_true', required=False)
+                        action='store_true', required=False)
     args = parser.parse_args()
 
     physDrive = args.physDrive
@@ -201,7 +212,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     # This is not guaranteed to catch all as there's just too many different
     # naming conventions out there.  Let's cover simple HDD/SSD/NVME patterns
     pdispart = (re.match('.*p?[1-9][0-9]*$', physDrive) and
-         not re.match('.*/nvme[0-9]+n[1-9][0-9]*$', physDrive))
+                not re.match('.*/nvme[0-9]+n[1-9][0-9]*$', physDrive))
     hit = ""
     with open("/proc/mounts", "r") as f:
         mounts = f.readlines()
@@ -209,7 +220,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
         dev = l.split()[0]
         mnt = l.split()[1]
         if dev == physDrive:
-            hit = dev + " on " + mnt # Obvious exact match
+            hit = dev + " on " + mnt  # Obvious exact match
         if pdispart:
             chkdev = dev
         else:
@@ -221,7 +232,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
                 chkdev = re.sub('p?[1-9][0-9]*$', '', dev)
         if chkdev == physDrive:
             hit = dev + " on " + mnt
-    if hit != "" :
+    if hit != "":
         print "ERROR:  Mounted volume '" + str(hit) + "' is on same device",
         print "as tested device '" + str(physDrive) + "'.  ABORTING."
         sys.exit(2)
@@ -235,21 +246,28 @@ def CollectSystemInfo():
     cpuinfo = cpuinfo.split("\n")
     if 'ppc64' in uname:
         # Implement grep and sed in Python...
-        cpu = filter(lambda x:re.search(r'model', x), cpuinfo)[0].split(': ')[1].replace('(R)','').replace('(TM)','')
-        cpuCores = len(filter(lambda x:re.search('processor', x), cpuinfo))
+        cpu = filter(lambda x: re.search(r'model', x), cpuinfo)[
+            0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
+        cpuCores = len(filter(lambda x: re.search('processor', x), cpuinfo))
         try:
             code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
-            cpuFreqMHz = int(round(float(filter(lambda x: re.search('Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+            cpuFreqMHz = int(round(float(filter(lambda x: re.search(
+                'Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
         except:
-            cpuFreqMHz = int(round(float(filter(lambda x:re.search('clock', x), cpuinfo)[0].split(': ')[1][:-3])))
+            cpuFreqMHz = int(round(
+                float(filter(lambda x: re.search('clock', x), cpuinfo)[0].split(': ')[1][:-3])))
     else:
-        cpu = filter(lambda x:re.search(r'model name', x), cpuinfo)[0].split(': ')[1].replace('(R)','').replace('(TM)','')
-        cpuCores = len(filter(lambda x:re.search('model name', x), cpuinfo))
+        cpu = filter(lambda x: re.search(r'model name', x), cpuinfo)[
+            0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
+        cpuCores = len(filter(lambda x: re.search('model name', x), cpuinfo))
         try:
             code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
-            cpuFreqMHz = int(round(float(filter(lambda x: re.search('Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
+            cpuFreqMHz = int(round(float(filter(lambda x: re.search(
+                'Current Speed', x), dmidecode.split("\n"))[0].rstrip().lstrip().split(" ")[2])))
         except:
-            cpuFreqMHz = int(round(float(filter(lambda x:re.search('cpu MHz', x), cpuinfo)[0].split(': ')[1])))
+            cpuFreqMHz = int(round(
+                float(filter(lambda x: re.search('cpu MHz', x), cpuinfo)[0].split(': ')[1])))
+
 
 def VerifyContinue():
     """User's last chance to abort the test.  Exit if they don't agree."""
@@ -257,7 +275,7 @@ def VerifyContinue():
         print "-" * 75
         print "WARNING! " * 9
         print "THIS TEST WILL DESTROY ANY DATA AND FILESYSTEMS ON ",
-        print physDrive +"\n"
+        print physDrive + "\n"
         cont = raw_input("Please type the word \"yes\" and hit return to " +
                          "continue, or anything else to abort.\n")
         print "-" * 75 + "\n"
@@ -273,7 +291,7 @@ def CollectDriveInfo():
     # We absolutely need this information
     try:
         physDriveBase = os.path.basename(physDrive)
-        code, physDriveBytes, err=Run(['blockdev', '--getsize64', physDrive])
+        code, physDriveBytes, err = Run(['blockdev', '--getsize64', physDrive])
         if code != 0:
             raise Exception("Can't get drive size for " + physDrive)
         physDriveGB = (long(physDriveBytes))/(1000 * 1000 * 1000)
@@ -298,14 +316,15 @@ def CollectDriveInfo():
                     serial = drive['SerialNumber']
                     return
     except:
-        pass #  An error in nvme is not a problem
+        pass  # An error in nvme is not a problem
     try:
         sdparmcmd = ['sdparm', '--page', 'sn', '--inquiry', '--long',
                      physDrive]
         code, sdparm, err = Run(sdparmcmd)
         lines = sdparm.split("\n")
         if len(lines) == 4:
-            model = re.sub(r'\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
+            model = re.sub(
+                r'\s+', " ", lines[0].split(":")[1].lstrip().rstrip())
             serial = re.sub(r'\s+', " ", lines[2].lstrip().rstrip())
         else:
             print "Unable to identify drive using sdparm. Continuing."
@@ -321,7 +340,7 @@ def CSVInfoHeader(f):
         prefix = "QUICKIE-INVALID-RESULTS-"
     else:
         prefix = ""
-    AppendFile("Drive," + prefix + str(physDriveTxt).replace(","," ") , f)
+    AppendFile("Drive," + prefix + str(physDriveTxt).replace(",", " "), f)
     AppendFile("Model," + prefix + str(model), f)
     AppendFile("Serial," + prefix + str(serial), f)
     AppendFile("AvailCapacity," + prefix + str(physDriveGiB) + ",GiB", f)
@@ -347,7 +366,7 @@ def SetupFiles():
     ds = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     # The unique suffix we generate for all output files
-    suffix  = str(physDriveGB) + "GB_" + str(cpuCores) + "cores_"
+    suffix = str(physDriveGB) + "GB_" + str(cpuCores) + "cores_"
     suffix += str(cpuFreqMHz) + "MHz_" + physDriveBase + "_"
     suffix += socket.gethostname() + "_" + ds
 
@@ -377,13 +396,16 @@ def SetupFiles():
         if os.path.exists(f):
             os.unlink(f)
         CSVInfoHeader(f)
-    AppendFile(",".join(["IOPS"] + physDriveDict.keys()), timeseriescsv) # Add IOPS header
+    AppendFile(",".join(["IOPS"] + physDriveDict.keys()),
+               timeseriescsv)  # Add IOPS header
     hdr = ""
     for host in physDriveDict.keys():
         hdr = hdr + ',' + host + "-read"
         hdr = hdr + ',' + host + "-write"
-    AppendFile('CLAT-read,CLAT-write' + hdr, timeseriesclatcsv) # Add IOPS header
-    AppendFile('SLAT-read,SLAT-write' + hdr, timeseriesslatcsv) # Add IOPS header
+    AppendFile('CLAT-read,CLAT-write' + hdr,
+               timeseriesclatcsv)  # Add IOPS header
+    AppendFile('SLAT-read,SLAT-write' + hdr,
+               timeseriesslatcsv)  # Add IOPS header
 
     # ODS input and output files
     odssrc = os.path.dirname(os.path.realpath(__file__)) + "/original.ods"
@@ -394,6 +416,7 @@ def SetupFiles():
     if os.path.exists(odsdest):
         os.unlink(odsdest)
 
+
 class FIOError(Exception):
     """Exception generated when FIO returns a non-success value
 
@@ -403,6 +426,7 @@ class FIOError(Exception):
         stderr  -- STDERR output from FIO
         stdout  -- STDOUT output from FIO
     """
+
     def __init__(self, cmdline, code, stderr, stdout):
         super(FIOError, self).__init__()
         self.cmdline = cmdline
@@ -410,18 +434,22 @@ class FIOError(Exception):
         self.stderr = stderr
         self.stdout = stdout
 
+
 def TestName(seqrand, wmix, bs, threads, iodepth):
     """Return full path and filename prefix for test of specified params"""
     global details, physDriveBase
-    testfile  = str(details) + "/Test" + str(seqrand) + "_w" + str(wmix)
+    testfile = str(details) + "/Test" + str(seqrand) + "_w" + str(wmix)
     testfile += "_bs" + str(bs) + "_threads" + str(threads) + "_iodepth"
     testfile += str(iodepth) + "_" + str(physDriveBase) + ".out"
     return testfile
 
+
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
     global quickie
+
     def GenerateJobfile(drive, testcapacity, testoffset):
+        """Write the sequential jobfile for a single server"""
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[SeqCond]\n")
         # Note that we can't use regular test runner because this test needs
@@ -437,21 +465,22 @@ def SequentialConditioning():
         else:
             jobfile.write("size=" + str(testcapacity) + "G\n")
         jobfile.write("thread=1\n")
-        jobfile.write("offset=" + str(testoffset)  + "G\n")
+        jobfile.write("offset=" + str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
 
-    cmdline = [ fio ]
+    cmdline = [fio]
     if not cluster:
         jobfile = GenerateJobfile(physDrive, testcapacity, testoffset)
-        cmdline = cmdline + [ jobfile.name ]
+        cmdline = cmdline + [jobfile.name]
     else:
-        jobfile = [ ]
+        jobfile = []
         for host in physDriveDict.keys():
-            newjob = GenerateJobfile(physDriveDict[host], testcapacity, testoffset)
-            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
-            jobfile = jobfile + [ newjob ]
-    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
+            newjob = GenerateJobfile(
+                physDriveDict[host], testcapacity, testoffset)
+            cmdline = cmdline + ['--client=' + str(host), str(newjob.name)]
+            jobfile = jobfile + [newjob]
+    cmdline = cmdline + ['--output-format=' + str(fioOutputFormat)]
 
     code, out, err = Run(cmdline)
 
@@ -462,14 +491,17 @@ def SequentialConditioning():
         os.unlink(jobfile.name)
 
     if code != 0:
-        raise FIOError(" ".join(cmdline), code , err, out)
+        raise FIOError(" ".join(cmdline), code, err, out)
     else:
         return "DONE", "DONE", "DONE"
+
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
     global quickie
+
     def GenerateJobfile(drive, testcapacity, testoffset):
+        """Write the random jobfile"""
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[RandCond]\n")
         # Note that we can't use regular test runner because this test needs
@@ -494,17 +526,18 @@ def RandomConditioning():
         jobfile.close()
         return jobfile
 
-    cmdline = [ fio ]
+    cmdline = [fio]
     if not cluster:
         jobfile = GenerateJobfile(physDrive, testcapacity, testoffset)
-        cmdline = cmdline + [ jobfile.name ]
+        cmdline = cmdline + [jobfile.name]
     else:
-        jobfile = [ ]
+        jobfile = []
         for host in physDriveDict.keys():
-            newjob = GenerateJobfile(physDriveDict[host], testcapacity, testoffset)
-            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
-            jobfile = jobfile + [ newjob ]
-    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
+            newjob = GenerateJobfile(
+                physDriveDict[host], testcapacity, testoffset)
+            cmdline = cmdline + ['--client=' + str(host), str(newjob.name)]
+            jobfile = jobfile + [newjob]
+    cmdline = cmdline + ['--output-format=' + str(fioOutputFormat)]
 
     code, out, err = Run(cmdline)
 
@@ -515,9 +548,10 @@ def RandomConditioning():
         os.unlink(jobfile.name)
 
     if code != 0:
-        raise FIOError(" ".join(cmdline), code , err, out)
+        raise FIOError(" ".join(cmdline), code, err, out)
     else:
         return "DONE", "DONE", "DONE"
+
 
 def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     """Runs the specified test, generates output CSV lines."""
@@ -553,6 +587,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
     # Taken from fio_latency2csv.py - needed to convert funky semi-log to normal latencies
     def plat_idx_to_val(idx, FIO_IO_U_PLAT_BITS=6, FIO_IO_U_PLAT_VAL=64):
+        """Convert from lat bucket to real value, for obsolete FIO revisions"""
         # MSB <= (FIO_IO_U_PLAT_BITS-1), cannot be rounded off. Use
         # all bits of the sample as index
         if idx < (FIO_IO_U_PLAT_VAL << 1):
@@ -569,7 +604,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         """Generate an exceedance CSV for read or write from JSON output."""
         global fioOutputFormat
         if fioOutputFormat == "json":
-            return # This data not present in JSON format, only JSON+
+            return  # This data not present in JSON format, only JSON+
         ios = client[rdwr]['total_ios']
         bins = client[rdwr]['clat_ns']['bins']
         if ios:
@@ -586,7 +621,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                     runttl += cnt
                     pctile = 1.0 - float(runttl) / float(ios)
                     if cnt > 0:
-                        AppendFile(",".join((str(lat_us), str(pctile))), outfile)
+                        AppendFile(
+                            ",".join((str(lat_us), str(pctile))), outfile)
             else:
                 plat_bits = client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_BITS']
                 plat_val = client[rdwr]['clat']['bins']['FIO_IO_U_PLAT_VAL']
@@ -595,9 +631,12 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                     runttl += cnt
                     pctile = 1.0 - float(runttl) / float(ios)
                     if cnt > 0:
-                        AppendFile(",".join((str(plat_idx_to_val(b, plat_bits, plat_val)), str(pctile))), outfile)
+                        AppendFile(
+                            ",".join((str(plat_idx_to_val(b, plat_bits, plat_val)),
+                                      str(pctile))), outfile)
 
     def GenerateJobfile(rw, wmix, bs, drive, testcapacity, runtime, threads, iodepth, testoffset):
+        """Make a jobfile for the specified test parameters"""
         global verify
         jobfile = tempfile.NamedTemporaryFile(delete=False)
         jobfile.write("[test]\n")
@@ -622,15 +661,16 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         if verify:
             jobfile.write("verify=crc32c\n")
             jobfile.write("random_generator=lfsr\n")
-        jobfile.write("offset=" +  str(testoffset) + "G\n")
+        jobfile.write("offset=" + str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
 
     def CombineThreadOutputs(suffix, outcsv, lat):
-        # Keep a running sum of IOPS as seen by all servers
+        """Merge all FIO iops/lat logs across all servers"""
         # The lists may be called "iops" but the same works for clat/slat
         iops = [0] * (runtime + extra_runtime)
-        iops_w = [0] * (runtime + extra_runtime) # For latenvies, need to keep the _w and _r separate
+        # For latenvies, need to keep the _w and _r separate
+        iops_w = [0] * (runtime + extra_runtime)
         host_iops = OrderedDict()
         host_iops_w = OrderedDict()
         filecnt = 0
@@ -639,11 +679,12 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
             host_iops_w[host] = [0] * (runtime + extra_runtime)
             for filename in glob.glob(testfile + str(suffix) + '.*.log.' + host):
                 filecnt = filecnt + 1
-                catcmdline = [ 'cat', filename ]
+                catcmdline = ['cat', filename]
                 catcode, catout, caterr = Run(catcmdline)
                 if catcode != 0:
                     AppendFile("ERROR", testcsv)
-                    raise FIOError(" ".join(catcmdline), catcode, caterr, catout)
+                    raise FIOError(" ".join(catcmdline),
+                                   catcode, caterr, catout)
                 lines = catout.split("\n")
                 # Set time 0 IOPS to first values
                 riops = 0
@@ -658,7 +699,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                         iops_w[x] = iops_w[x] + wiops
                         host_iops[host][x] = host_iops[host][x] + riops
                         host_iops_w[host][x] = host_iops_w[host][x] + wiops
-                    while len(lines)>1 and (nexttime < x):
+                    while len(lines) > 1 and (nexttime < x):
                         parts = lines[0].split(",")
                         nexttime = float(parts[0]) / 1000.0
                         if int(lines[0].split(",")[2]) == 1:
@@ -678,8 +719,11 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                 if len(physDriveDict.keys()) > 1:
                     for host in physDriveDict.keys():
                         if lat:
-                            line = line + ',' + str(float(host_iops[host][cnt])/float(filecnt))
-                            line = line + ',' + str(float(host_iops_w[host][cnt])/float(filecnt))
+                            line = line + ',' + \
+                                str(float(host_iops[host][cnt])/float(filecnt))
+                            line = line + ',' + \
+                                str(float(host_iops_w[host]
+                                          [cnt])/float(filecnt))
                         else:
                             line = line + "," + str(host_iops[host][cnt])
                 f.write(line + "\n")
@@ -693,7 +737,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         rw = "randrw"
 
     if iops_log and not cluster:
-        o={}
+        o = {}
         o['runtime'] = runtime
         iostat = threading.Thread(target=IOStatThread, kwargs=(o))
         iostat.start()
@@ -703,31 +747,33 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     else:
         extra_runtime = 0
 
-    cmdline = [ fio ]
+    cmdline = [fio]
     if not cluster:
-        jobfile = GenerateJobfile(rw, wmix, bs, physDrive, testcapacity, runtime + extra_runtime, threads, iodepth, testoffset)
-        cmdline = cmdline + [ jobfile.name ]
+        jobfile = GenerateJobfile(rw, wmix, bs, physDrive, testcapacity,
+                                  runtime + extra_runtime, threads, iodepth, testoffset)
+        cmdline = cmdline + [jobfile.name]
         AppendFile("[JOBFILE]", testfile)
         with open(jobfile.name, 'r') as of:
             txt = of.read()
             AppendFile(txt, testfile)
     else:
-        jobfile = [ ]
+        jobfile = []
         for host in physDriveDict.keys():
-            newjob = GenerateJobfile(rw, wmix, bs, physDriveDict[host], testcapacity, runtime + extra_runtime, threads, iodepth, testoffset)
-            cmdline = cmdline + [ '--client=' + str(host), str(newjob.name) ]
+            newjob = GenerateJobfile(rw, wmix, bs, physDriveDict[host], testcapacity,
+                                     runtime + extra_runtime, threads, iodepth, testoffset)
+            cmdline = cmdline + ['--client=' + str(host), str(newjob.name)]
             AppendFile('[JOBFILE-' + str(host) + "]", testfile)
             with open(newjob.name, 'r') as of:
                 txt = of.read()
                 AppendFile(txt, testfile)
-            jobfile = jobfile + [ newjob ]
+            jobfile = jobfile + [newjob]
             if iops_log:
-                AppendFile("write_iops_log=" + testfile , newjob.name)
-                AppendFile("write_lat_log=" + testfile , newjob.name)
+                AppendFile("write_iops_log=" + testfile, newjob.name)
+                AppendFile("write_lat_log=" + testfile, newjob.name)
                 AppendFile("log_avg_msec=1000", newjob.name)
                 AppendFile("log_unix_epoch=0", newjob.name)
 
-    cmdline = cmdline + [ '--output-format=' + str(fioOutputFormat) ]
+    cmdline = cmdline + ['--output-format=' + str(fioOutputFormat)]
 
     # There are some NVME drives with 4k physical and logical out there.
     # Check that we can actually do this size IO, OTW return 0 for all
@@ -783,7 +829,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         j = json.loads(out)
 
         if cluster and len(physDriveDict.keys()) == 1:
-            client =  j['client_stats'][0]
+            client = j['client_stats'][0]
         elif cluster:
             for res in j['client_stats']:
                 if res['jobname'] == "All clients":
@@ -797,22 +843,22 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
         # 'lat' goes to 'lat_ns' in newest FIO JSON formats...ugh
         try:
-            rlat = float(client['read']['lat_ns']['mean']) / 1000 # ns->us
+            rlat = float(client['read']['lat_ns']['mean']) / 1000  # ns->us
         except:
             rlat = float(client['read']['lat']['mean'])
         try:
-            wlat = float(client['write']['lat_ns']['mean']) / 1000 # ns->us
+            wlat = float(client['write']['lat_ns']['mean']) / 1000  # ns->us
         except:
             wlat = float(client['write']['lat']['mean'])
 
     iops = "{0:0.0f}".format(rdiops + wriops)
     mbps = "{0:0.2f}".format((float((rdiops+wriops) * bs) /
-                                        (1024.0 * 1024.0)))
+                              (1024.0 * 1024.0)))
     lat = "{0:0.1f}".format(max(rlat, wlat))
 
     AppendFile(",".join((str(seqrand), str(wmix), str(bs), str(threads),
-                          str(iodepth), str(iops), str(mbps), str(rlat),
-                          str(wlat))), testcsv)
+                         str(iodepth), str(iops), str(mbps), str(rlat),
+                         str(wlat))), testcsv)
 
     if skiptest:
         AppendFile("1,1\n", testfile + ".exc.read.csv")
@@ -827,8 +873,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         except:
             AppendFile("1,1\n", testfile + ".exc.write.csv")
 
-
     return iops, mbps, lat
+
 
 def DefineTests():
     """Generate the work list for the main worker into OC."""
@@ -838,14 +884,15 @@ def DefineTests():
     qdlist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
 
-    shorttime = 120 # Runtime of point tests
-    longtime = 1200 # Runtime of long-running tests
+    shorttime = 120  # Runtime of point tests
+    longtime = 1200  # Runtime of long-running tests
     if quickie:
         shorttime = int(shorttime / 10)
         longtime = int(longtime / 10)
 
     def AddTest(name, seqrand, writepct, blocksize, threads, qdperthread,
-                 iops_log, runtime, desc, cmdline):
+                iops_log, runtime, desc, cmdline):
+        """Bare usage add a test to the list to execute"""
         if threads != "":
             qd = int(threads) * int(qdperthread)
         else:
@@ -869,6 +916,7 @@ def DefineTests():
 
     def DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, desc,
                   iops_log, runtime):
+        """Add an individual run to the list of tests to execute"""
         AddTest(testname, seqrand, wmix, bs, threads, iodepth, iops_log,
                 runtime, desc, lambda o: {RunTest(o['iops_log'],
                                                   o['seqrand'], o['wmix'],
@@ -877,6 +925,7 @@ def DefineTests():
                                                   o['runtime'])})
 
     def AddTestBSShmoo():
+        """Add a sequence of tests varying the block size"""
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
                 lambda o: {AppendFile(o['name'], testcsv)})
         for bs in bslist:
@@ -885,6 +934,7 @@ def DefineTests():
                       iops_log, runtime)
 
     def AddTestQDShmoo():
+        """Add a sequence of tests varying the queue depth"""
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
                 lambda o: {AppendFile(o['name'], testcsv)})
         for iodepth in qdlist:
@@ -893,6 +943,7 @@ def DefineTests():
                       iops_log, runtime)
 
     def AddTestThreadsShmoo():
+        """Add a sequence of tests varying the number of threads"""
         AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
                 lambda o: {AppendFile(o['name'], testcsv)})
         for threads in threadslist:
@@ -901,7 +952,7 @@ def DefineTests():
                       iops_log, runtime)
 
     AddTest('Sequential Preconditioning', 'Preparation', '', '', '', '', '',
-            '', '', lambda o: {}) # Only for display on-screen
+            '', '', lambda o: {})  # Only for display on-screen
     AddTest('Sequential Preconditioning', 'Seq Pass 1', '100', '131072', '1',
             '256', False, '', 'Sequential Preconditioning Pass 1',
             lambda o: {SequentialConditioning()})
@@ -911,33 +962,33 @@ def DefineTests():
 
     testname = "Sustained Multi-Threaded Sequential Read Tests by Block Size"
     seqrand = "Seq"
-    wmix=0
-    threads=1
-    runtime=shorttime
-    iops_log=False
-    iodepth=256
+    wmix = 0
+    threads = 1
+    runtime = shorttime
+    iops_log = False
+    iodepth = 256
     AddTestBSShmoo()
 
     testname = "Sustained Multi-Threaded Random Read Tests by Block Size"
     seqrand = "Rand"
-    wmix=0
-    threads=16
-    runtime=shorttime
-    iops_log=False
-    iodepth=16
+    wmix = 0
+    threads = 16
+    runtime = shorttime
+    iops_log = False
+    iodepth = 16
     AddTestBSShmoo()
 
     testname = "Sequential Write Tests with Queue Depth=1 by Block Size"
     seqrand = "Seq"
-    wmix=100
-    threads=1
-    runtime=shorttime
-    iops_log=False
-    iodepth=1
+    wmix = 100
+    threads = 1
+    runtime = shorttime
+    iops_log = False
+    iodepth = 1
     AddTestBSShmoo()
 
     AddTest('Random Preconditioning', 'Preparation', '', '', '', '', '', '',
-            '', lambda o: {}) # Only for display on-screen
+            '', lambda o: {})  # Only for display on-screen
     AddTest('Random Preconditioning', 'Rand Pass 1', '100', '4096', '1',
             '256', False, '', 'Random Preconditioning',
             lambda o: {RandomConditioning()})
@@ -947,51 +998,51 @@ def DefineTests():
 
     testname = "Sustained 4KB Random Read Tests by Number of Threads"
     seqrand = "Rand"
-    wmix=0
-    bs=4096
-    runtime=shorttime
-    iops_log=False
-    iodepth=1
+    wmix = 0
+    bs = 4096
+    runtime = shorttime
+    iops_log = False
+    iodepth = 1
     AddTestThreadsShmoo()
 
     testname = "Sustained 4KB Random mixed 30% Write Tests by Threads"
     seqrand = "Rand"
-    wmix=30
-    bs=4096
-    runtime=shorttime
-    iops_log=False
-    iodepth=1
+    wmix = 30
+    bs = 4096
+    runtime = shorttime
+    iops_log = False
+    iodepth = 1
     AddTestThreadsShmoo()
 
     testname = "Sustained Perf Stability Test - 4KB Random 30% Write"
     AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
             lambda o: {AppendFile(o['name'], testcsv)})
     seqrand = "Rand"
-    wmix=30
-    bs=4096
-    runtime=longtime
-    iops_log=True
-    iodepth=1
-    threads=256
+    wmix = 30
+    bs = 4096
+    runtime = longtime
+    iops_log = True
+    iodepth = 1
+    threads = 256
     DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, testname,
               iops_log, runtime)
 
     testname = "Sustained 4KB Random Write Tests by Number of Threads"
     seqrand = "Rand"
-    wmix=100
-    bs=4096
-    runtime=shorttime
-    iops_log=False
-    iodepth=1
+    wmix = 100
+    bs = 4096
+    runtime = shorttime
+    iops_log = False
+    iodepth = 1
     AddTestThreadsShmoo()
 
     testname = "Sustained Multi-Threaded Random Write Tests by Block Size"
     seqrand = "Rand"
-    wmix=100
-    runtime=shorttime
-    iops_log=False
-    iodepth=16
-    threads=16
+    wmix = 100
+    runtime = shorttime
+    iops_log = False
+    iodepth = 16
+    threads = 16
     AddTestBSShmoo()
 
 
@@ -1030,7 +1081,7 @@ def RunAllTests():
     print "*" * len(fmtstr.format("", "", "", ""))
     print "ezFio test parameters:\n"
 
-    fmtinfo="{0: >20}: {1}"
+    fmtinfo = "{0: >20}: {1}"
     print fmtinfo.format("Drive", str(physDriveTxt))
     print fmtinfo.format("Model", str(model))
     print fmtinfo.format("Serial", str(serial))
@@ -1066,7 +1117,7 @@ def RunAllTests():
                 now = datetime.datetime.now()
                 delta = now - starttime
                 dstr = "{0:02}:{1:02}:{2:02}".format(delta.seconds / 3600,
-                                                     (delta.seconds%3600)/60,
+                                                     (delta.seconds % 3600)/60,
                                                      delta.seconds % 60)
                 if sys.stdout.isatty():
                     # Blink runtime to make it obvious stuff is happening
@@ -1087,12 +1138,14 @@ def RunAllTests():
             if sys.stdout.isatty():
                 print fmtstr.format(o['desc'], ret_mbps, ret_iops, ret_lat)
             else:
-                print " " + resfmt.format(o['desc'], ret_mbps, ret_iops, ret_lat)
+                print " " + resfmt.format(o['desc'],
+                                          ret_mbps, ret_iops, ret_lat)
             sys.stdout.flush()
             # On any error abort the test, all future results could be invalid
             if ret_mbps == "ERROR":
                 print "ERROR DETECTED, ABORTING TEST RUN."
                 sys.exit(2)
+
 
 def GenerateResultODS():
     """Builds a new ODS spreadsheet w/graphs from generated test CSV files."""
@@ -1106,7 +1159,7 @@ def GenerateResultODS():
 
     def CSVtoXMLSheet(sheetName, csvName):
         """Replace a named sheet with the contents of a CSV file."""
-        newt  = '<table:table table:name='
+        newt = '<table:table table:name='
         newt += '"' + sheetName + '"' + ' table:style-name="ta1" > '
         newt += '<table:table-column table:style-name="co1" '
         newt += 'table:default-cell-style-name="Default"/>'
@@ -1117,12 +1170,13 @@ def GenerateResultODS():
                 newt += '<table:table-row table:style-name="ro1">'
                 for val in line.split(','):
                     try:
-                        cell  = '<table:table-cell office:value-type="float" '
+                        cell = '<table:table-cell office:value-type="float" '
                         cell += 'office:value="' + str(float(val))
                         cell += '" calcext:value-type="float"><text:p>'
-                        cell += str(float(val)) + '</text:p></table:table-cell>'
-                    except: # It's not a float, so let's call it a string
-                        cell  = '<table:table-cell office:value-type="string" '
+                        cell += str(float(val)) + \
+                            '</text:p></table:table-cell>'
+                    except:  # It's not a float, so let's call it a string
+                        cell = '<table:table-cell office:value-type="string" '
                         cell += 'calcext:value-type="string"><text:p>'
                         cell += str(val) + '</text:p></table:table-cell>'
                     newt += cell
@@ -1137,7 +1191,7 @@ def GenerateResultODS():
         newt = CSVtoXMLSheet(sheetName, csvName)
 
         # Replace the XML using lazy string matching
-        searchstr  = '<table:table table:name="' + sheetName
+        searchstr = '<table:table table:name="' + sheetName
         searchstr += '".*?</table:table>'
         return re.sub(searchstr, newt, xmltext)
 
@@ -1146,7 +1200,7 @@ def GenerateResultODS():
         newt = CSVtoXMLSheet(sheetName, csvName)
 
         # Replace the XML using lazy string matching
-        searchstr  = '<table:named-expressions/>'
+        searchstr = '<table:named-expressions/>'
         return re.sub(searchstr, newt + searchstr, xmltext)
 
     def UpdateContentXMLToODS_text(odssrc, odsdest, xmltext):
@@ -1188,7 +1242,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
             elif ("Object" in entry) and ("content.xml" in entry):
                 # Remove <table:table table:name="local-table"> table
                 rdbytes = zasrc.read(entry)
-                outbytes = re.sub('<table:table table:name="local-table">.*</table:table>', "", rdbytes)
+                outbytes = re.sub(
+                    '<table:table table:name="local-table">.*</table:table>', "", rdbytes)
                 zadst.writestr(entry, outbytes)
             elif entry == "META-INF/manifest.xml":
                 # Remove ObjectReplacements from the list
@@ -1221,7 +1276,8 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         line1 = ""
         line2 = ""
         for qd in qdList:
-            line1 = line1 + ("QD%d Read Exceedance,,QD%d Write Exceedance,,," % (qd, qd))
+            line1 = line1 + \
+                ("QD%d Read Exceedance,,QD%d Write Exceedance,,," % (qd, qd))
             line2 = line2 + "rdusec,rdpct,wrusec,wrpct,,"
         AppendFile(line1, csv)
         AppendFile(line2, csv)
@@ -1229,14 +1285,16 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
         files = []
         for qd in qdList:
             try:
-                r = open(TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.read.csv")
+                r = open(TestName(testType, testWpct, testBS,
+                                  qd, testIOdepth) + ".exc.read.csv")
             except:
                 r = None
             try:
-                w = open(TestName(testType, testWpct, testBS, qd, testIOdepth) + ".exc.write.csv")
+                w = open(TestName(testType, testWpct, testBS,
+                                  qd, testIOdepth) + ".exc.write.csv")
             except:
                 w = None
-            files.append([ r, w ])
+            files.append([r, w])
         while True:
             all_empty = True
             l = ""
@@ -1263,12 +1321,15 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
 
     xmlsrc = GetContentXMLFromODS(odssrc)
     xmlsrc = ReplaceSheetWithCSV_regex("Timeseries", timeseriescsv, xmlsrc)
-    xmlsrc = ReplaceSheetWithCSV_regex("TimeseriesCLAT", timeseriesclatcsv, xmlsrc)
-    xmlsrc = ReplaceSheetWithCSV_regex("TimeseriesSLAT", timeseriesslatcsv, xmlsrc)
+    xmlsrc = ReplaceSheetWithCSV_regex(
+        "TimeseriesCLAT", timeseriesclatcsv, xmlsrc)
+    xmlsrc = ReplaceSheetWithCSV_regex(
+        "TimeseriesSLAT", timeseriesslatcsv, xmlsrc)
     xmlsrc = ReplaceSheetWithCSV_regex("Tests", testcsv, xmlsrc)
     # Potentially add exceedance data if we have it
     if fioOutputFormat == "json+":
-        csv = CombineExceedanceCSV([1,4,16,32], "Rand", 30, 4096, 1, "exceedance30")
+        csv = CombineExceedanceCSV(
+            [1, 4, 16, 32], "Rand", 30, 4096, 1, "exceedance30")
         xmlsrc = ReplaceSheetWithCSV_regex("Exceedance", csv, xmlsrc)
     # Remove draw:image references to deleted binary previews
     xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
@@ -1282,14 +1343,13 @@ VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
     UpdateContentXMLToODS_text(odssrc, odsdest, xmlsrc)
 
 
-
 fio = ""          # FIO executable
-fioVerString = "" # FIO self-reported version
-fioOutputFormat = "json" # Can we make exceedance charts using JSON+ output?
+fioVerString = ""  # FIO self-reported version
+fioOutputFormat = "json"  # Can we make exceedance charts using JSON+ output?
 cluster = False   # Running multiple jobs in a cluster using fio --server
 physDrive = ""    # Device path to test
-physDriveTxt = "" # Unadulterated drive line
-physDriveDict = OrderedDict() # Device path to test
+physDriveTxt = ""  # Unadulterated drive line
+physDriveDict = OrderedDict()  # Device path to test
 utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
@@ -1303,32 +1363,32 @@ uname = ""       # Kernel name/info
 
 physDriveGiB = ""  # Disk size in GiB (2^n)
 physDriveGB = ""   # Disk size in GB (10^n)
-physDriveBase = "" # Basename (ex: nvme0n1)
+physDriveBase = ""  # Basename (ex: nvme0n1)
 testcapacity = ""  # Total GiB to test
 testoffset = ""    # test region offset in GiB
 model = ""         # Drive model name
 serial = ""        # Drive serial number
 
 ds = ""  # Datestamp to appent to files/directories to uniquify
-pwd = "" # $CWD
+pwd = ""  # $CWD
 
 details = ""       # Test details directory
 testcsv = ""       # Intermediate test output CSV file
-timeseriescsv = "" # Intermediate iostat output CSV file
-timeseriesclatcsv = "" # Intermediate iostat output CSV file
-timeseriesslatcsv = "" # Intermediate iostat output CSV file
-exceedancecsv = "" # Intermediate exceedance output CSV
+timeseriescsv = ""  # Intermediate iostat output CSV file
+timeseriesclatcsv = ""  # Intermediate iostat output CSV file
+timeseriesslatcsv = ""  # Intermediate iostat output CSV file
+exceedancecsv = ""  # Intermediate exceedance output CSV
 
 odssrc = ""  # Original ODS spreadsheet file
-odsdest = "" # Generated results ODS spreadsheet file
+odsdest = ""  # Generated results ODS spreadsheet file
 
-oc = [] # The list of tests to run
-aioNeeded = 4096 # Minimum AIO kernel setting to run all tests
+oc = []  # The list of tests to run
+aioNeeded = 4096  # Minimum AIO kernel setting to run all tests
 
 # These globals are used to return the output results of the test thread
 # Required because it's difficult to pass back values from a threading.().
-ret_iops = 0 # Last test IOPS
-ret_mbps = 0 # Last test MBPs
+ret_iops = 0  # Last test IOPS
+ret_mbps = 0  # Last test MBPs
 ret_lat = 0  # Last test in microseconds
 
 if __name__ == "__main__":
