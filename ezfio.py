@@ -600,13 +600,33 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         # Return the mean of the range of the bucket
         return base + ((k + 0.5) * (1 << error_bits))
 
-    def WriteExceedance(client, rdwr, outfile):
+    def WriteExceedance(j, rdwr, outfile):
         """Generate an exceedance CSV for read or write from JSON output."""
         global fioOutputFormat
         if fioOutputFormat == "json":
             return  # This data not present in JSON format, only JSON+
-        ios = client[rdwr]['total_ios']
-        bins = client[rdwr]['clat_ns']['bins']
+        # Generate a dict of combined bins, either for jobs[0] or client_stats[]
+        bins = {}
+        ios = 0
+        try:
+            # Non-cluster case will have jobs, only a single one needed
+            ios = j['jobs'][0][rdwr]['total_ios']
+            bins = j['jobs'][0][rdwr]['clat_ns']['bins']
+        except:
+            # Cluster case will have client_stats to combine
+            for client_stats in j['client_stats']:
+                if client_stats['jobname'] == 'All clients':
+                    # Don't bother looking at combined, bins doesn't exist there
+                    continue
+                if client_stats[rdwr]['total_ios']:
+                    ios = ios + client_stats[rdwr]['total_ios']
+                    for k in client_stats[rdwr]['clat_ns']['bins'].keys():
+                        try:
+                            bins[k] = bins[k] + client_stats[rdwr]['clat_ns']['bins'][k]
+                        except:
+                            bins[k] = client_stats[rdwr]['clat_ns']['bins'][k]
+        #ios = client[rdwr]['total_ios']
+        #bins = client[rdwr]['clat_ns']['bins']
         if ios:
             runttl = 0
             # This was changed in 2.99 to be in nanoseconds and to discard the crazy _bits magic
@@ -864,14 +884,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("1,1\n", testfile + ".exc.read.csv")
         AppendFile("1,1\n", testfile + ".exc.write.csv")
     else:
-        try:
-            WriteExceedance(client, 'read', testfile + ".exc.read.csv")
-        except:
-            AppendFile("1,1\n", testfile + ".exc.read.csv")
-        try:
-            WriteExceedance(client, 'write', testfile + ".exc.write.csv")
-        except:
-            AppendFile("1,1\n", testfile + ".exc.write.csv")
+        WriteExceedance(j, 'read', testfile + ".exc.read.csv")
+        WriteExceedance(j, 'write', testfile + ".exc.write.csv")
 
     return iops, mbps, lat
 
