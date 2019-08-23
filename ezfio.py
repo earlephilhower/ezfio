@@ -382,8 +382,8 @@ def SetupFiles():
     for host in physDriveDict.keys():
         hdr = hdr + ',' + host + "-read"
         hdr = hdr + ',' + host + "-write"
-    AppendFile('CLAT-read,CLAT-write,' + hdr, timeseriesclatcsv) # Add IOPS header
-    AppendFile('SLAT-read,SLAT-write,' + hdr, timeseriesslatcsv) # Add IOPS header
+    AppendFile('CLAT-read,CLAT-write' + hdr, timeseriesclatcsv) # Add IOPS header
+    AppendFile('SLAT-read,SLAT-write' + hdr, timeseriesslatcsv) # Add IOPS header
 
     # ODS input and output files
     odssrc = os.path.dirname(os.path.realpath(__file__)) + "/original.ods"
