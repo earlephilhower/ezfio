@@ -1120,7 +1120,7 @@ def GenerateResultODS():
 
         # Replace the XML using lazy string matching
         searchstr  = '<table:table table:name="' + sheetName
-        searchstr += '.*?</table:table>'
+        searchstr += '".*?</table:table>'
         return re.sub(searchstr, newt, xmltext)
 
     def AppendSheetFromCSV(sheetName, csvName, xmltext):
