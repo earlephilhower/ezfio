@@ -148,7 +148,7 @@ def CheckAIOLimits():
 def ParseArgs():
     """Parse command line options into globals."""
     global physDrive, physDriveDict, physDriveTxt, utilization
-    global outputDest, offset, cluster, yes, quickie, verify
+    global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="A tool to easily run FIO to benchmark sustained "
@@ -180,6 +180,9 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     parser.add_argument("--yes", dest="yes", action='store_true',
                         help="Skip the final warning prompt (for scripted tests)",
                         required=False)
+    parser.add_argument("--fast-precondition", dest='fastpre', action='store_true',
+                        help="Only do a single sequential write to precondition drive",
+                        required=False)
     parser.add_argument("--quickie", dest="quickie", help=argparse.SUPPRESS,
                         action='store_true', required=False)
     args = parser.parse_args()
@@ -192,7 +195,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     yes = args.yes
     quickie = args.quickie
     verify = args.verify
-
+    fastPrecond = args.fastpre
     cluster = args.cluster
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
@@ -340,11 +343,13 @@ def CollectDriveInfo():
 def CSVInfoHeader(f):
     """Headers to the CSV file (ending up in the ODS at the test end)."""
     global physDriveTxt, model, serial, physDriveGiB, testcapacity, testoffset
-    global cpu, cpuCores, cpuFreqMHz, uname, quickie
+    global cpu, cpuCores, cpuFreqMHz, uname, quickie, fastPrecond
     if quickie:
         prefix = "QUICKIE-INVALID-RESULTS-"
     else:
         prefix = ""
+    if fastPrecond:
+        prefix = "FASTPRECOND-" + prefix
     AppendFile("Drive," + prefix + str(physDriveTxt).replace(",", " "), f)
     AppendFile("Model," + prefix + str(model), f)
     AppendFile("Serial," + prefix + str(serial), f)
@@ -451,7 +456,7 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
-    global quickie
+    global quickie, fastPrecond
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
@@ -897,7 +902,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
 def DefineTests():
     """Generate the work list for the main worker into OC."""
-    global oc, quickie
+    global oc, quickie, fastPrecond
     # What we're shmoo-ing across
     bslist = (512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
     qdlist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
@@ -975,9 +980,10 @@ def DefineTests():
     AddTest('Sequential Preconditioning', 'Seq Pass 1', '100', '131072', '1',
             '256', False, '', 'Sequential Preconditioning Pass 1',
             lambda o: {SequentialConditioning()})
-    AddTest('Sequential Preconditioning', 'Seq Pass 2', '100', '131072', '1',
-            '256', False, '', 'Sequential Preconditioning Pass 2',
-            lambda o: {SequentialConditioning()})
+    if not fastPrecond:
+        AddTest('Sequential Preconditioning', 'Seq Pass 2', '100', '131072', '1',
+                '256', False, '', 'Sequential Preconditioning Pass 2',
+                lambda o: {SequentialConditioning()})
 
     testname = "Sustained Multi-Threaded Sequential Read Tests by Block Size"
     seqrand = "Seq"
@@ -1006,14 +1012,15 @@ def DefineTests():
     iodepth = 1
     AddTestBSShmoo()
 
-    AddTest('Random Preconditioning', 'Preparation', '', '', '', '', '', '',
-            '', lambda o: {})  # Only for display on-screen
-    AddTest('Random Preconditioning', 'Rand Pass 1', '100', '4096', '1',
-            '256', False, '', 'Random Preconditioning',
-            lambda o: {RandomConditioning()})
-    AddTest('Random Preconditioning', 'Rand Pass 2', '100', '4096', '1',
-            '256', False, '', 'Random Preconditioning',
-            lambda o: {RandomConditioning()})
+    if not fastPrecond:
+        AddTest('Random Preconditioning', 'Preparation', '', '', '', '', '', '',
+                '', lambda o: {})  # Only for display on-screen
+        AddTest('Random Preconditioning', 'Rand Pass 1', '100', '4096', '1',
+                '256', False, '', 'Random Preconditioning',
+                lambda o: {RandomConditioning()})
+        AddTest('Random Preconditioning', 'Rand Pass 2', '100', '4096', '1',
+                '256', False, '', 'Random Preconditioning',
+                lambda o: {RandomConditioning()})
 
     testname = "Sustained 4KB Random Read Tests by Number of Threads"
     seqrand = "Rand"
@@ -1371,6 +1378,7 @@ utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
 quickie = False   # Flag to indicate short runs, only for ezfio debugging!
+fastPrecond = False  # Only do 1x sequential write for preconditioning (no random)
 verify = False    # Use built-in FIO data verification
 
 cpu = ""         # CPU model
