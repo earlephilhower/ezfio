@@ -1245,10 +1245,9 @@ def GenerateResultODS():
         # Windows ZipArchive will not use "Store" even with "no compression"
         # so we need to have a mimetype.zip file encoded below to match spec:
         mimetypezip = """
-UEsDBAoAAAAAAOKbNUiFbDmKLgAAAC4AAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi92bmQub2Fz
-aXMub3BlbmRvY3VtZW50LnNwcmVhZHNoZWV0UEsBAj8ACgAAAAAA4ps1SIVsOYouAAAALgAAAAgA
-JAAAAAAAAACAAAAAAAAAAG1pbWV0eXBlCgAgAAAAAAABABgAAAyCUsVU0QFH/eNMmlTRAUf940ya
-VNEBUEsFBgAAAAABAAEAWgAAAFQAAAAAAA==
+UEsDBBQAAAgAAICyN0+FbDmKLgAAAC4AAAAIAAAAbWltZXR5cGVhcHBsaWNhdGlvbi92bmQub2Fz
+aXMub3BlbmRvY3VtZW50LnNwcmVhZHNoZWV0UEsBAhQAFAAACAAAgLI3T4VsOYouAAAALgAAAAgA
+AAAAAAAAAAAAAAAAAAAAAG1pbWV0eXBlUEsFBgAAAAABAAEANgAAAFQAAAAAAA==
 """
         zipbytes = base64.b64decode(mimetypezip)
         with open(odsdest, 'wb') as f:
