@@ -1217,7 +1217,7 @@ def GenerateResultODS():
         # Replace the XML using lazy string matching
         searchstr = '<table:table table:name="' + sheetName
         searchstr += '".*?</table:table>'
-        return re.sub(searchstr, newt, xmltext)
+        return re.sub(searchstr, newt, xmltext, flags=re.DOTALL)
 
     def AppendSheetFromCSV(sheetName, csvName, xmltext):
         """Add a new sheet to the XML from the CSV file."""
@@ -1225,7 +1225,7 @@ def GenerateResultODS():
 
         # Replace the XML using lazy string matching
         searchstr = '<table:named-expressions/>'
-        return re.sub(searchstr, newt + searchstr, xmltext)
+        return re.sub(searchstr, newt + searchstr, xmltext, flags=re.DOTALL)
 
     def UpdateContentXMLToODS_text(odssrc, odsdest, xmltext):
         """Replace content.xml in an ODS w/an in-memory copy and write new.
@@ -1266,7 +1266,7 @@ AAAAAAAAAAAAAAAAAAAAAG1pbWV0eXBlUEsFBgAAAAABAAEANgAAAFQAAAAAAA==
                 # Remove <table:table table:name="local-table"> table
                 rdbytes = zasrc.read(entry).decode('UTF-8')
                 outbytes = re.sub(
-                    '<table:table table:name="local-table">.*</table:table>', "", rdbytes)
+                    '<table:table table:name="local-table">.*</table:table>', "", rdbytes, flags=re.DOTALL)
                 zadst.writestr(entry, outbytes)
             elif entry == "META-INF/manifest.xml":
                 # Remove ObjectReplacements from the list
@@ -1355,7 +1355,7 @@ AAAAAAAAAAAAAAAAAAAAAG1pbWV0eXBlUEsFBgAAAAABAAEANgAAAFQAAAAAAA==
             [1, 4, 16, 32], "Rand", 30, 4096, 1, "exceedance30")
         xmlsrc = ReplaceSheetWithCSV_regex("Exceedance", csv, xmlsrc)
     # Remove draw:image references to deleted binary previews
-    xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc)
+    xmlsrc = re.sub("<draw:image.*?/>", "", xmlsrc, flags=re.DOTALL)
     # OpenOffice doesn't recalculate these cells on load?!
     xmlsrc = xmlsrc.replace("_DRIVE", str(physDrive))
     xmlsrc = xmlsrc.replace("_TESTCAP", str(testcapacity))
