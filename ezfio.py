@@ -576,34 +576,6 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     """Runs the specified test, generates output CSV lines."""
     global cluster, physDriveDict
 
-    def IOStatThread(**kwargs):
-        """Collect 1-second interval IOPS values to a CSV."""
-        starttime = datetime.datetime.now()
-        stoptime = starttime + datetime.timedelta(0, int(o['runtime']))
-        statpath = "/sys/block/"+physDriveBase+"/stat"
-        if not os.path.exists(statpath):
-            base = re.sub("p?[0-9]+$", "", physDriveBase)
-            statpath = "/sys/block/"+base+"/stat"
-        with open(statpath, "r") as f:
-            stat = f.read().rstrip().split()
-            readstart = int(stat[0])
-            writestart = int(stat[4])
-        timeseries = open(timeseriescsv, "a")
-        now = starttime
-        while now < stoptime:
-            time.sleep(1)
-            with open(statpath, "r") as f:
-                stat = f.read().rstrip().split()
-                readend = int(stat[0])
-                writeend = int(stat[4])
-            iops = (readend - readstart) + (writeend - writestart)
-            readstart = readend
-            writestart = writeend
-            timeseries.write(str(iops) + "\n")
-            timeseries.flush()
-            now = datetime.datetime.now()
-        timeseries.close()
-
     # Taken from fio_latency2csv.py - needed to convert funky semi-log to normal latencies
     def plat_idx_to_val(idx, FIO_IO_U_PLAT_BITS=6, FIO_IO_U_PLAT_VAL=64):
         """Convert from lat bucket to real value, for obsolete FIO revisions"""
@@ -711,15 +683,24 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         """Merge all FIO iops/lat logs across all servers"""
         # The lists may be called "iops" but the same works for clat/slat
         iops = [0] * (runtime + extra_runtime)
-        # For latenvies, need to keep the _w and _r separate
+        # For latencies, need to keep the _w and _r separate
         iops_w = [0] * (runtime + extra_runtime)
         host_iops = OrderedDict()
         host_iops_w = OrderedDict()
         filecnt = 0
-        for host in physDriveDict.keys():
+        if not cluster:
+            pdd = OrderedDict()
+            pdd['localhost'] = 1 # Just the single host, faked here
+        else:
+            pdd = physDriveDict
+        for host in pdd.keys():
             host_iops[host] = [0] * (runtime + extra_runtime)
             host_iops_w[host] = [0] * (runtime + extra_runtime)
-            for filename in glob.glob(testfile + str(suffix) + '.*.log.' + host):
+            if not cluster:
+                fileglob = testfile + str(suffix) + '.*log'
+            else:
+                fileglob = testfile + str(suffix) + '.*.log.' + host
+            for filename in glob.glob(fileglob):
                 filecnt = filecnt + 1
                 catcmdline = ['cat', filename]
                 catcode, catout, caterr = Run(catcmdline)
@@ -758,8 +739,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                     line = line + ',' + str(float(iops_w[cnt])/float(filecnt))
                 else:
                     line = str(iops[cnt])
-                if len(physDriveDict.keys()) > 1:
-                    for host in physDriveDict.keys():
+                if len(pdd.keys()) > 1:
+                    for host in pdd.keys():
                         if lat:
                             line = line + ',' + \
                                 str(float(host_iops[host][cnt])/float(filecnt))
@@ -778,12 +759,6 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     else:
         rw = "randrw"
 
-    if iops_log and not cluster:
-        o = {}
-        o['runtime'] = runtime
-        iostat = threading.Thread(target=IOStatThread, kwargs=(o))
-        iostat.start()
-
     if iops_log:
         extra_runtime = 10
     else:
@@ -798,6 +773,11 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         with open(jobfile.name, 'r') as of:
             txt = of.read()
             AppendFile(txt, testfile)
+        if iops_log:
+            AppendFile("write_iops_log=" + testfile, jobfile.name)
+            AppendFile("write_lat_log=" + testfile, jobfile.name)
+            AppendFile("log_avg_msec=1000", jobfile.name)
+            AppendFile("log_unix_epoch=0", jobfile.name)
     else:
         jobfile = []
         for host in physDriveDict.keys():
@@ -851,9 +831,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         AppendFile("ERROR", testcsv)
         raise FIOError(" ".join(cmdline), code, err, out)
 
-    if iops_log and not cluster:
-        iostat.join()
-    elif iops_log and cluster:
+    if iops_log:
         CombineThreadOutputs('_iops', timeseriescsv, False)
         CombineThreadOutputs('_clat', timeseriesclatcsv, True)
         CombineThreadOutputs('_slat', timeseriesslatcsv, True)
