@@ -147,7 +147,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, physDriveDict, physDriveTxt, utilization
+    global physDrive, physDriveDict, physDriveTxt, utilization, nullio
     global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -185,6 +185,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
                         required=False)
     parser.add_argument("--quickie", dest="quickie", help=argparse.SUPPRESS,
                         action='store_true', required=False)
+    parser.add_argument("--nullio", dest="nullio", help=argparse.SUPPRESS,
+                        action='store_true', required=False)
     args = parser.parse_args()
 
     physDrive = args.physDrive
@@ -194,6 +196,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     offset = args.offset
     yes = args.yes
     quickie = args.quickie
+    nullio = args.nullio
     verify = args.verify
     fastPrecond = args.fastpre
     cluster = args.cluster
@@ -456,7 +459,7 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
-    global quickie, fastPrecond
+    global quickie, fastPrecond, nullio
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
@@ -466,7 +469,10 @@ def SequentialConditioning():
         # to run for a specified # of bytes, not a specified # of seconds.
         jobfile.write("readwrite=write\n")
         jobfile.write("bs=128k\n")
-        jobfile.write("ioengine=libaio\n")
+        if nullio:
+            jobfile.write("ioengine=null\n")
+        else:
+            jobfile.write("ioengine=libaio\n")
         jobfile.write("iodepth=64\n")
         jobfile.write("direct=1\n")
         jobfile.write("filename=" + str(drive) + "\n")
@@ -508,7 +514,7 @@ def SequentialConditioning():
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
-    global quickie
+    global quickie, nullio
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the random jobfile"""
@@ -527,7 +533,10 @@ def RandomConditioning():
             jobfile.write("size=1G\n")
         else:
             jobfile.write("size=" + str(testcapacity) + "G\n")
-        jobfile.write("ioengine=libaio\n")
+        if nullio:
+            jobfile.write("ioengine=null\n")
+        else:
+            jobfile.write("ioengine=libaio\n")
         jobfile.write("iodepth=256\n")
         jobfile.write("norandommap\n")
         jobfile.write("randrepeat=0\n")
@@ -667,7 +676,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
     def GenerateJobfile(rw, wmix, bs, drive, testcapacity, runtime, threads, iodepth, testoffset):
         """Make a jobfile for the specified test parameters"""
-        global verify
+        global verify, nullio
         jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
         jobfile.write("[test]\n")
         jobfile.write("readwrite=" + str(rw) + "\n")
@@ -681,7 +690,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         jobfile.write("size=" + str(testcapacity) + "G\n")
         jobfile.write("time_based=1\n")
         jobfile.write("runtime=" + str(runtime) + "\n")
-        jobfile.write("ioengine=libaio\n")
+        if nullio:
+            jobfile.write("ioengine=null\n")
+        else:
+            jobfile.write("ioengine=libaio\n")
         jobfile.write("numjobs=" + str(threads) + "\n")
         jobfile.write("iodepth=" + str(iodepth) + "\n")
         jobfile.write("norandommap=1\n")
@@ -1377,6 +1389,7 @@ utilization = ""  # Device utilization % 1..100
 offset = ""       # Test region offset % 0..99
 yes = False       # Skip user verification
 quickie = False   # Flag to indicate short runs, only for ezfio debugging!
+nullio = False    # Flag to do no IO at all, use nullio instead
 fastPrecond = False  # Only do 1x sequential write for preconditioning (no random)
 verify = False    # Use built-in FIO data verification
 
