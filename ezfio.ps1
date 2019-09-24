@@ -1009,9 +1009,9 @@ function GenerateResultODS()
             foreach ($val in ($_.Split(','))) {
                 $dbl = 0.0
                 if ( [System.Double]::TryParse( $val, [ref]$dbl ) ) {
-                    $newt = $newt + "<table:table-cell office:value-type=`"float`" office:value=`"$val`" calcext:value-type=`"float`"><text:p>$val</text:p></table:table-cell>"
+                    $newt = $newt + "<table:table-cell office:value-type=`"float`" office:value=`"$val`"><text:p>$val</text:p></table:table-cell>"
                 } else {
-                    $newt = $newt + "<table:table-cell office:value-type=`"string`" calcext:value-type=`"string`"><text:p>$val</text:p></table:table-cell>"
+                    $newt = $newt + "<table:table-cell office:value-type=`"string`"><text:p>$val</text:p></table:table-cell>"
                 }
             }
             $newt = $newt + "</table:table-row>"

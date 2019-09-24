@@ -86,11 +86,11 @@ def GenerateCombinedODS():
                     try:
                         cell  = '<table:table-cell office:value-type="float" '
                         cell += 'office:value="' + str(float(val))
-                        cell += '" calcext:value-type="float"><text:p>'
+                        cell += '"><text:p>'
                         cell += str(float(val)) + '</text:p></table:table-cell>'
                     except: # It's not a float, so let's call it a string
                         cell  = '<table:table-cell office:value-type="string" '
-                        cell += 'calcext:value-type="string"><text:p>'
+                        cell += '><text:p>'
                         cell += str(val) + '</text:p></table:table-cell>'
                     newt += cell
                 newt += '</table:table-row>'
