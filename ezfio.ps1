@@ -40,7 +40,8 @@ param (
     [int]$util = 100,
     [switch]$help,
     [switch]$yes,
-    [switch]$nullio
+    [switch]$nullio,
+    [switch]$quickie
 )
 
 
@@ -272,6 +273,7 @@ function ParseArgs()
     } else {
         $global:ioengine = "null"
     }
+    $global:quickie = $quickie
 
     # Do a sanity check that the selected drive does not show as a local drive letter
     Get-WMIObject Win32_LogicalDisk | Foreach-Object {
@@ -474,7 +476,12 @@ function SequentialConditioning
     # Sequentially fill the complete capacity of the drive once.
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    . $fio "--name=SeqCond" "--readwrite=write" "--bs=128k" "--ioengine=$ioengine" "--iodepth=64" "--direct=1" "--filename=$physDrive" "--size=${testcapacity}G" "--thread" | Out-Null
+    if ($quickie) {
+        $size = "1G"
+    } else {
+        $size = "${testcapacity}G"
+    }
+    . $fio "--name=SeqCond" "--readwrite=write" "--bs=128k" "--ioengine=$ioengine" "--iodepth=64" "--direct=1" "--filename=$physDrive" "--size=$size" "--thread" | Out-Null
     if ( $LastExitCode -ne 0 ) {
         Write-Output "ERROR" "ERROR" "ERROR"
     } else {
@@ -487,7 +494,12 @@ function RandomConditioning
     # Randomly write entire device for the full capacity
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    . $fio "--name=RandCond" "--readwrite=randwrite" "--bs=4k" "--invalidate=1" "--end_fsync=0" "--group_reporting" "--direct=1" "--filename=$physDrive"  "--size=${testcapacity}G" "--ioengine=$ioengine" "--iodepth=256" "--norandommap" "--randrepeat=0" "--thread" | Out-Null
+    if ($quickie) {
+        $size = "1G"
+    } else {
+        $size = "${testcapacity}G"
+    }
+    . $fio "--name=RandCond" "--readwrite=randwrite" "--bs=4k" "--invalidate=1" "--end_fsync=0" "--group_reporting" "--direct=1" "--filename=$physDrive"  "--size=$size" "--ioengine=$ioengine" "--iodepth=256" "--norandommap" "--randrepeat=0" "--thread" | Out-Null
     if ( $LastExitCode -ne 0 ) {
         Write-Output "ERROR" "ERROR" "ERROR"
     } else {
@@ -646,7 +658,10 @@ function DefineTests {
     $threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     $shorttime = 120 # Runtime of point tests
     $longtime = 1200 # Runtime of long-running tests
-
+    if ($quickie) {
+        $shorttime = [int]($shorttime / 10)
+        $longtime = [int]($longtime / 10)
+    }
     function AddTest( $name, $seqrand, $writepct, $blocksize, $threads, $qdperthread, $desc, $cmdline ) {
         if ($threads -eq "") { $qd = '' } else { $qd = ([int]$threads) * ([int]$qdperthread) }
         if ($blocksize -ne "") { if ($blocksize -lt 1024) { $bsstr = "${blocksize}b" } else { $bsstr = "{0:N0}K" -f ([int]$blocksize/1024) } }
@@ -1217,6 +1232,7 @@ $global:utilization = ""  # Device utilization % 1..100
 $global:yes = $false      # Skip user verification
 $global:nullio = $false   # Use the null IO engine, no real transfers done
 $global:ioengine = "windowsaio"   # FIO engine to use for simplicity
+$global:quickie = $false   # Do short shadown test, non-standard
 
 $global:cpu = ""         # CPU model
 $global:cpuCores = ""    # # of cores (including virtual)
@@ -1265,6 +1281,7 @@ $global:globals += "`$physDriveNo = `"$global:physDriveNo`";"
 $global:globals += "`$details= `"$global:details`";"
 $global:globals += "`$ds = `"$global:ds`";"
 $global:globals += "`$ioengine = `"$global:ioengine`";"
+$global:globals += "`$quickie = `"$global:quickie`";"
 
 
 DefineTests
