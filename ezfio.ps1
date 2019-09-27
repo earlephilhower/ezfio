@@ -268,7 +268,7 @@ function ParseArgs()
     }
 
     $global:yes = $yes
-    if ( $nullio ) {
+    if ( -not $nullio ) {
         $global:ioengine = "windowsaio"
     } else {
         $global:ioengine = "null"
