@@ -39,7 +39,8 @@ param (
     [string]$outDir = "none",
     [int]$util = 100,
     [switch]$help,
-    [switch]$yes
+    [switch]$yes,
+    [switch]$nullio
 )
 
 
@@ -266,6 +267,11 @@ function ParseArgs()
     }
 
     $global:yes = $yes
+    if ( $nullio ) {
+        $global:ioengine = "windowsaio"
+    } else {
+        $global:ioengine = "null"
+    }
 
     # Do a sanity check that the selected drive does not show as a local drive letter
     Get-WMIObject Win32_LogicalDisk | Foreach-Object {
@@ -468,7 +474,7 @@ function SequentialConditioning
     # Sequentially fill the complete capacity of the drive once.
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    . $fio "--name=SeqCond" "--readwrite=write" "--bs=128k" "--ioengine=windowsaio" "--iodepth=64" "--direct=1" "--filename=$physDrive" "--size=${testcapacity}G" "--thread" | Out-Null
+    . $fio "--name=SeqCond" "--readwrite=write" "--bs=128k" "--ioengine=$ioengine" "--iodepth=64" "--direct=1" "--filename=$physDrive" "--size=${testcapacity}G" "--thread" | Out-Null
     if ( $LastExitCode -ne 0 ) {
         Write-Output "ERROR" "ERROR" "ERROR"
     } else {
@@ -481,7 +487,7 @@ function RandomConditioning
     # Randomly write entire device for the full capacity
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    . $fio "--name=RandCond" "--readwrite=randwrite" "--bs=4k" "--invalidate=1" "--end_fsync=0" "--group_reporting" "--direct=1" "--filename=$physDrive"  "--size=${testcapacity}G" "--ioengine=windowsaio" "--iodepth=256" "--norandommap" "--randrepeat=0" "--thread" | Out-Null
+    . $fio "--name=RandCond" "--readwrite=randwrite" "--bs=4k" "--invalidate=1" "--end_fsync=0" "--group_reporting" "--direct=1" "--filename=$physDrive"  "--size=${testcapacity}G" "--ioengine=$ioengine" "--iodepth=256" "--norandommap" "--randrepeat=0" "--thread" | Out-Null
     if ( $LastExitCode -ne 0 ) {
         Write-Output "ERROR" "ERROR" "ERROR"
     } else {
@@ -575,7 +581,7 @@ function RunTest
         logman start -s $env:computername ezfioIostat | Out-Null
     }
 
-    $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=windowsaio", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=$fioOutputFormat", "--exitall")
+    $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=$ioengine", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=$fioOutputFormat", "--exitall")
     $fio + " " + [string]::Join(" ", $cmd) | Out-File $testfile
     . $fio @cmd | Out-File -Append $testfile
 
@@ -1209,6 +1215,8 @@ $global:fioOutputFormat = "json" # Can we make exceedance charts using JSON+ out
 $global:physDrive = ""    # Device path to test
 $global:utilization = ""  # Device utilization % 1..100
 $global:yes = $false      # Skip user verification
+$global:nullio = $false   # Use the null IO engine, no real transfers done
+$global:ioengine = "windowsaio"   # FIO engine to use for simplicity
 
 $global:cpu = ""         # CPU model
 $global:cpuCores = ""    # # of cores (including virtual)
@@ -1255,7 +1263,9 @@ $global:globals += "`$testcsv = `"$global:testcsv`";"
 $global:globals += "`$physDriveBase = `"$global:physDriveBase`";"
 $global:globals += "`$physDriveNo = `"$global:physDriveNo`";"
 $global:globals += "`$details= `"$global:details`";"
-$global:globals += "`$ds= `"$global:ds`";"
+$global:globals += "`$ds = `"$global:ds`";"
+$global:globals += "`$ioengine = `"$global:ioengine`";"
+
 
 DefineTests
 if ($global:testmode -eq "cli") { RunAllTestsCLI }
