@@ -392,17 +392,17 @@ function CollectDriveInfo()
 
 # Set up names for all output/input files, place headers on CSVs.
 function CSVInfoHeader {
-	# Headers to the CSV file (ending up in the ODS at the test end)
-	"Drive,$global:physDrive"
-	"Model,$global:model"
-	"Serial,$global:serial"
-	"AvailCapacity,$global:physDriveGiB,GiB"
-	"TestedCapacity,$global:testcapacity,GiB"
-	"CPU,$global:cpu"
-	"Cores,$global:cpuCores"
-	"Frequency,$global:cpuFreqMHz"
-	"OS,$global:uname"
-	"FIOVersion,$global:fioVerString"
+    # Headers to the CSV file (ending up in the ODS at the test end)
+    "Drive,$global:physDrive"
+    "Model,$global:model"
+    "Serial,$global:serial"
+    "AvailCapacity,$global:physDriveGiB,GiB"
+    "TestedCapacity,$global:testcapacity,GiB"
+    "CPU,$global:cpu"
+    "Cores,$global:cpuCores"
+    "Frequency,$global:cpuFreqMHz"
+    "OS,$global:uname"
+    "FIOVersion,$global:fioVerString"
 }
 
 function SetupFiles()
@@ -439,9 +439,17 @@ function SetupFiles()
     CSVInfoHeader > $global:testcsv
     "Type,Write %,Block Size,Threads,Queue Depth/Thread,IOPS,Bandwidth (MB/s),Read Latency (us),Write Latency (us)" >> $global:testcsv
     $global:timeseriescsv ="${global:details}\ezfio_timeseries_${suffix}.csv"
+    $global:timeseriesclatcsv ="${global:details}\ezfio_timeseriesclat_${suffix}.csv"
+    $global:timeseriesslatcsv ="${global:details}\ezfio_timeseriesslat_${suffix}.csv"
     if (Test-Path $global:timeseriescsv) { Remove-Item $global:timeseriescsv }
+    if (Test-Path $global:timeseriesclatcsv) { Remove-Item $global:timeseriesclatcsv }
+    if (Test-Path $global:timeseriesslatcsv) { Remove-Item $global:timeseriesslatcsv }
     CSVInfoHeader > $global:timeseriescsv
+    CSVInfoHeader > $global:timeseriesclatcsv
+    CSVInfoHeader > $global:timeseriesslatcsv
     "IOPS" >> $global:timeseriescsv  # Add IOPS header
+    "CLAT-read,CLAT-write" >> $global:timeseriesclatcsv
+    "SLAT-read,SLAT-write" >> $global:timeseriesslatcsv
 
     # ODS input and output files
     $global:odssrc = "${PWD}\original.ods"
@@ -533,35 +541,87 @@ function WriteExceedance($j, $rdwr, $outfile)
     $ios = $j.jobs[0].$rdwr.total_ios
     if ( $ios -gt 0 ) {
         $runttl = 0;
-		# FIO 2.99 changed this to use saner latency bucketing, no semi-log needed
-		if ($j.jobs[0].$rdwr.clat_ns) {
-			# This is very inefficient, but need to convert from object.property's to sorted ints...
-			$lat_ns = @()
-			foreach ($n in ((Get-Member -inputObject $j.jobs[0].$rdwr.clat_ns.bins -MemberType Properties).name) ) {
-				$lat_ns += [int]$n
-			}
-			foreach ($b in ($lat_ns | sort-object)) {
-				$lat_us = [float]($b) / 1000.0
-				$cnt = [int]$j.jobs[0].$rdwr.clat_ns.bins.$b
-				$runttl += $cnt
-				$pctile = 1.0 - [float]$runttl / [float]$ios;
-				if ( $cnt -gt 0 ) {
-					"$lat_us,$pctile" >> $outfile
-				}
-			}
-		} else {
-			$plat_bits = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_BITS
-			$plat_val = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_VAL
-			foreach ($b in 0..[int]$j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_NR) {
-				$cnt = [int]$j.jobs[0].$rdwr.clat.bins.$b
-				$runttl += $cnt
-				$pctile = 1.0 - [float]$runttl / [float]$ios
-				if ( $cnt -gt 0 ) {
-					$p2idx = plat_idx_to_val $b $plat_bits $plat_val
-					"${p2idx},${pctile}" >> $outfile
-				}
-			}
-		}
+        # FIO 2.99 changed this to use saner latency bucketing, no semi-log needed
+        if ($j.jobs[0].$rdwr.clat_ns) {
+            # This is very inefficient, but need to convert from object.property's to sorted ints...
+            $lat_ns = @()
+            foreach ($n in ((Get-Member -inputObject $j.jobs[0].$rdwr.clat_ns.bins -MemberType Properties).name) ) {
+                $lat_ns += [int]$n
+            }
+            foreach ($b in ($lat_ns | sort-object)) {
+                $lat_us = [float]($b) / 1000.0
+                $cnt = [int]$j.jobs[0].$rdwr.clat_ns.bins.$b
+                $runttl += $cnt
+                $pctile = 1.0 - [float]$runttl / [float]$ios;
+                if ( $cnt -gt 0 ) {
+                    "$lat_us,$pctile" >> $outfile
+                }
+            }
+        } else {
+            $plat_bits = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_BITS
+            $plat_val = $j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_VAL
+            foreach ($b in 0..[int]$j.jobs[0].$rdwr.clat.bins.FIO_IO_U_PLAT_NR) {
+                $cnt = [int]$j.jobs[0].$rdwr.clat.bins.$b
+                $runttl += $cnt
+                $pctile = 1.0 - [float]$runttl / [float]$ios
+                if ( $cnt -gt 0 ) {
+                    $p2idx = plat_idx_to_val $b $plat_bits $plat_val
+                    "${p2idx},${pctile}" >> $outfile
+                }
+            }
+        }
+    }
+}
+
+function CombineThreadOutputs($suffix, $outcsv, $lat, $runtime, $extra_runtime)
+{
+    # Merge all FIO iops/lat logs across all servers"""
+    # The lists may be called "iops" but the same works for clat/slat
+    $testtime = $runtime + $extra_runtime
+    $iops = New-Object 'float[]' $testtime
+    # For latencies, need to keep the _w and _r separate
+    $iops_w = New-Object 'float[]' $testtime
+    $filecnt = 0
+    $fileglob = "$testfile$suffix.*log"
+    Get-ChildItem $fileglob | ForEach-Object {
+        $filename = $_.FullName
+        $filecnt++
+    $csvhdr = 'timestamp', 'value', 'wr', 'ign'
+    $lines = Import-Csv -Path $filename -Header $csvhdr
+    $lineidx = 0
+        # Set time 0 IOPS to first values
+        $riops = [float]0.0
+        $wiops = [float]0.0
+        $nexttime = [float]0.0
+        for ($x=0; $x -lt $testtime; $x++) {
+            if ( -not $lat ) {
+                $iops[$x] = [float]$iops[$x] + [float]$riops + [float]$wiops
+            } else {
+                $iops[$x] = [float]$iops[$x] + [float]$riops
+                $iops_w[$x] = [float]$iops_w[$x] + [float]$wiops
+            }
+            while (($lineidx -lt $lines.Count) -and ($nexttime -lt $x)) {
+                $nexttime = $lines[$lineidx].timestamp / 1000.0
+                if ( $lines[$lineidx].wr -eq 1 ) {
+                    $wiops = [int]$lines[$lineidx].value
+                } else {
+                    $riops = [int]$lines[$lineidx].value
+                }
+                $lineidx++
+            }
+        }
+    }
+
+    # Generate the combined CSV
+    for ($x=[int]($extra_runtime / 2); $x -lt ($runtime + $extra_runtime); $x++) {
+        if ( $lat ) {
+            $a = [float]$iops[$x] / [float]$filecnt
+            $b = [float]$iops_w[$x] / [float]$filecnt
+            "{0:f1},{1:f1}" -f $a, $b >> $outcsv
+        } else {
+        $a = $iops[$x]
+            "{0:f0}" -f $a >> $outcsv
+        }
     }
 }
 
@@ -572,28 +632,30 @@ function RunTest
 
     # Output file names
     $testfile = TestName $seqrand $wmix $bs $threads $iodepth
-    $logfile = "$details\iostat_ezfio_${ds}.csv"
 
     if ( $seqrand -eq "Seq" ) { $rw = "rw" }
     else { $rw = "randrw" }
 
     if ( $iops_log ) {
-        # Clean up any existing performance counter
-        logman stop ezfioIostat | Out-Null
-        logman -s $env:computername delete ezfioIostat | Out-Null
-        if ( Test-Path $logfile ) { Remove-Item $logfile }
-        logman delete -s $env:computername ezfioIostat | Out-Null
-
-        # Create the performance counter
-        logman create -s $env:computername counter ezfioIostat -c `
-            "\\$env:computername\PhysicalDisk(${physDriveNo}*)\Disk Reads/sec", `
-            "\\$env:computername\PhysicalDisk(${physDriveNo}*)\Disk Writes/sec" `
-            -f csv -o "$logfile" --v -si 1 -y | Out-Null
-        # And finally fire it off
-        logman start -s $env:computername ezfioIostat | Out-Null
+        $extra_runtime = 10
+    } else {
+        $extra_runtime = 0
     }
+    $testtime = $runtime + $extra_runtime
 
-    $cmd = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix", "--bs=$bs", "--invalidate=1", "--end_fsync=0", "--group_reporting", "--direct=1", "--filename=$physDrive", "--size=${testcapacity}G", "--time_based", "--runtime=$runtime", "--ioengine=$ioengine", "--numjobs=$threads", "--iodepth=$iodepth", "--norandommap", "--randrepeat=0", "--thread", "--output-format=$fioOutputFormat", "--exitall")
+    $cmd  = ("--name=test", "--readwrite=$rw", "--rwmixwrite=$wmix")
+    $cmd += ("--bs=$bs", "--invalidate=1", "--end_fsync=0")
+    $cmd += ("--group_reporting", "--direct=1", "--filename=$physDrive")
+    $cmd += ("--size=${testcapacity}G", "--time_based", "--runtime=$testtime")
+    $cmd += ("--ioengine=$ioengine", "--numjobs=$threads")
+    $cmd += ("--iodepth=$iodepth", "--norandommap", "--randrepeat=0")
+    if ( $iops_log ) {
+        $cmd += ("--write_iops_log=$testfile")
+        $cmd += ("--write_lat_log=$testfile")
+        $cmd += ("--log_avg_msec=1000")
+        $cmd += ("--log_unix_epoch=0")
+    }
+    $cmd += ("--thread", "--output-format=$fioOutputFormat", "--exitall")
     $fio + " " + [string]::Join(" ", $cmd) | Out-File $testfile
     . $fio @cmd | Out-File -Append $testfile
 
@@ -603,27 +665,9 @@ function RunTest
     }
 
     if ( $iops_log ) {
-        logman stop ezfioIostat | Out-Null
-        logman -s $env:computername delete ezfioIostat | Out-Null
-
-        # Read CSV to mem and operate
-        $inputCSV = Import-CSV "$logfile"
-        [int]$length = ( $inputCSV.Length - 1 )
-
-        # Get read and write column names using indexes because the titles will be localized and can't match against "read" or "write"
-	$readcolname = ($inputCSV | Get-member -MemberType 'NoteProperty' | Select-Object -ExpandProperty 'Name')[1]
-	$writecolname = ($inputCSV | Get-member -MemberType 'NoteProperty' | Select-Object -ExpandProperty 'Name')[2]
-        # Sum the 2 columns to get cumulative IOPS
-        for ([int]$i=0; [int]$i -le $length; [int]$i++) {
-            [string]$read = $inputCSV[$i].$readcolname
-            [string]$write=$inputCSV[$i].$writecolname
-            if ( ( $read -eq ' ' ) -or ( $write -eq ' ' ) ) {
-                [int]$read = 0
-                [int]$write = 0
-            }
-            [int]$IOPS = [int]$read + [int]$write
-            "$IOPS" >> $timeseriescsv
-        }
+        CombineThreadOutputs '_iops' $timeseriescsv $false $runtime $extra_runtime
+        CombineThreadOutputs '_clat' $timeseriesclatcsv $true $runtime $extra_runtime
+        CombineThreadOutputs '_slat' $timeseriesslatcsv $true $runtime $extra_runtime
     }
 
     $j = ConvertFrom-Json "$(Get-Content $testfile | select -Skip 1)"
@@ -637,7 +681,7 @@ function RunTest
     # Locale output is not wanted here, manually make a decimal string.  Ugh
     $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat))
     $mbpsfloat = (( ($rdiops+$wriops) * $bs ) / ( 1024.0 * 1024.0 ))
-    "{0:F0}" -f [math]::floor($mbpsfloat) + "." + "{0:F0}" -f [math]::floor($mbpsfloat*100000 - [math]::floor($mbpsfloat)*100000 ) | Set-Variable mbps
+    "{0:f1}" -f $mbpsfloat | Set-Variable mbps
     $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat)) # This is just displayed, use native locale
     "$seqrand,$wmix,$bs,$threads,$iodepth,$iops,$mbps,$rlat,$wlat" >> $testcsv
 
@@ -975,7 +1019,6 @@ function RunAllTestsCLI()
     [string]::format( $fmtstr, "Test Description", "BW(MB/s)", "IOPS", "Lat(us)")
     [string]::format( $fmtstr, "-"*$maxlen, "-"*8, "-"*9, "-"*8)
 
-
     foreach ($o in $global:oc) {
         if ( $o.desc -eq "" ) {
             # This is a header-printing job, don't thread out
@@ -1017,7 +1060,7 @@ function GenerateResultODS()
         $contentobj = $reader.ReadToEnd()
         $reader.Close()
         $ziparchive.Dispose()
-        return $contentobj
+        return $contentobj -replace "`n","" -replace "`r",""
     }
 
     function ReplaceSheetWithCSV_regex($sheetName, $csvName, $xmltext)
@@ -1048,40 +1091,40 @@ function GenerateResultODS()
         # Column merge multiple CSV files into a single one.  Complicated by
         # the fact that the number of columns in each may vary.
 
-		$csv = $global:details + "/ezfio_exceedance_" + $suffix + ".csv"
-		if ( Test-Path -Path $csv ) {
-			Remove-Item -Recurse -Force $csv | Out-Null
-		}
-		CSVInfoHeader > $csv
-		$line1 = ""
-		$line2 = ""
-		foreach ($qd in $qdList) {
-			$line1 = $line1 + "QD${qd} Read Exceedance,,QD${qd} Write Exceedance,,,"
-			$line2 = $line2 + "rdusec,rdpct,wrusec,wrpct,,"
-		}
-		$line1 >> $csv;
-		$line2 >> $csv;
+        $csv = $global:details + "/ezfio_exceedance_" + $suffix + ".csv"
+        if ( Test-Path -Path $csv ) {
+            Remove-Item -Recurse -Force $csv | Out-Null
+        }
+        CSVInfoHeader > $csv
+        $line1 = ""
+        $line2 = ""
+        foreach ($qd in $qdList) {
+            $line1 = $line1 + "QD${qd} Read Exceedance,,QD${qd} Write Exceedance,,,"
+            $line2 = $line2 + "rdusec,rdpct,wrusec,wrpct,,"
+        }
+        $line1 >> $csv;
+        $line2 >> $csv;
 
         $files = @()
         foreach ($qd in $qdList) {
             $testname = TestName $testType $testWpct $testBS $qd $testIOdepth
             if ( Test-Path -Path "${testname}.exc.read.csv") {
-				$r = [System.IO.File]::OpenText( "${testname}.exc.read.csv" )
-			} else {
-				$r = $null
-			}
+                $r = [System.IO.File]::OpenText( "${testname}.exc.read.csv" )
+            } else {
+                $r = $null
+            }
             if ( Test-Path -Path "${testname}.exc.write.csv") {
-				$w = [System.IO.File]::OpenText( "${testname}.exc.write.csv" )
-			} else {
-				$w = $null
-			}
+                $w = [System.IO.File]::OpenText( "${testname}.exc.write.csv" )
+            } else {
+                $w = $null
+            }
             $files += , @( $r, $w )
         }
         do {
             $all_empty = $true
             $l = ""
             foreach ($fset in $files) {
-				if (($fset[0] -eq $null) -or ($fset[0].EndOfStream)) {
+                if (($fset[0] -eq $null) -or ($fset[0].EndOfStream)) {
                     $a = ","
                 } else {
                     $a = $fset[0].ReadLine().Trim()
@@ -1183,6 +1226,8 @@ AAAAAAAAAAAAAAAAAAAAAG1pbWV0eXBlUEsFBgAAAAABAAEANgAAAFQAAAAAAA==
     # occasional problems.  Also allows same logic to run under Linux w/sed
     [string]$xmlsrc = GetContentXMLFromODS $global:odssrc
     $xmlsrc = ReplaceSheetWithCSV_regex Timeseries $global:timeseriescsv $xmlsrc
+    $xmlsrc = ReplaceSheetWithCSV_regex TimeseriesCLAT $global:timeseriesclatcsv $xmlsrc
+    $xmlsrc = ReplaceSheetWithCSV_regex TimeseriesSLAT $global:timeseriesslatcsv $xmlsrc
     $xmlsrc = ReplaceSheetWithCSV_regex Tests $global:testcsv $xmlsrc
     # Potentially add exceedance data if we have it
     if ($global:fioOutputFormat -eq "json+") {
@@ -1251,6 +1296,8 @@ $global:ds = ""  # Datestamp to appent to files/directories to uniquify
 $global:details = ""       # Test details directory
 $global:testcsv = ""       # Intermediate test output CSV file
 $global:timeseriescsv = "" # Intermediate iostat output CSV file
+$global:timeseriesclatcsv = "" # Intermediate iostat output CSV file
+$global:timeseriesslatcsv = "" # Intermediate iostat output CSV file
 
 $global:odssrc = ""  # Original ODS spreadsheet file
 $global:odsdest = "" # Generated results ODS spreadsheet file
@@ -1275,6 +1322,8 @@ $global:globals += "`$fioOutputFormat = `"$global:fioOutputFormat`";"
 $global:globals += "`$physDrive = `"$global:physDrive`";"
 $global:globals += "`$testcapacity = `"$global:testcapacity`";"
 $global:globals += "`$timeseriescsv = `"$global:timeseriescsv`";"
+$global:globals += "`$timeseriesclatcsv = `"$global:timeseriesclatcsv`";"
+$global:globals += "`$timeseriesslatcsv = `"$global:timeseriesslatcsv`";"
 $global:globals += "`$testcsv = `"$global:testcsv`";"
 $global:globals += "`$physDriveBase = `"$global:physDriveBase`";"
 $global:globals += "`$physDriveNo = `"$global:physDriveNo`";"
