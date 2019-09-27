@@ -546,7 +546,7 @@ function WriteExceedance($j, $rdwr, $outfile)
             # This is very inefficient, but need to convert from object.property's to sorted ints...
             $lat_ns = @()
             foreach ($n in ((Get-Member -inputObject $j.jobs[0].$rdwr.clat_ns.bins -MemberType Properties).name) ) {
-                $lat_ns += [int]$n
+                $lat_ns += [long]$n
             }
             foreach ($b in ($lat_ns | sort-object)) {
                 $lat_us = [float]($b) / 1000.0
