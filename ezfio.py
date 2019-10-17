@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 """ezfio 1.9
 earlephilhower@yahoo.com
