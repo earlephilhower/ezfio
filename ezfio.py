@@ -506,6 +506,11 @@ def SequentialConditioning():
     else:
         os.unlink(jobfile.name)
 
+    AppendFile("[STDOUT]", str(details) + "/Preconditioning_Sequential")
+    AppendFile(out,  str(details) + "/Preconditioning_Sequential")
+    AppendFile("[STDERR]", str(details) + "/Preconditioning_Sequential")
+    AppendFile(out,  str(details) + "/Preconditioning_Sequential")
+
     if code != 0:
         raise FIOError(" ".join(cmdline), code, err, out)
     else:
@@ -565,6 +570,11 @@ def RandomConditioning():
             os.unlink(job.name)
     else:
         os.unlink(jobfile.name)
+
+    AppendFile("[STDOUT]", str(details) + "/Preconditioning_Random")
+    AppendFile(out,  str(details) + "/Preconditioning_Random")
+    AppendFile("[STDERR]", str(details) + "/Preconditioning_Random")
+    AppendFile(out,  str(details) + "/Preconditioning_Random")
 
     if code != 0:
         raise FIOError(" ".join(cmdline), code, err, out)
@@ -1012,23 +1022,24 @@ def DefineTests():
                 '256', False, '', 'Random Preconditioning',
                 lambda o: {RandomConditioning()})
 
-    testname = "Sustained 4KB Random Read Tests by Number of Threads"
-    seqrand = "Rand"
-    wmix = 0
-    bs = 4096
-    runtime = shorttime
-    iops_log = False
-    iodepth = 1
-    AddTestThreadsShmoo()
+    for bs in [4096, 8192, 65536]:
+        testname = "Sustained " + str(int(bs / 1024)) + "KB Random Read Tests by Number of Threads"
+        seqrand = "Rand"
+        wmix = 0
+        #bs = 4096
+        runtime = shorttime
+        iops_log = False
+        iodepth = 1
+        AddTestThreadsShmoo()
 
-    testname = "Sustained 4KB Random mixed 30% Write Tests by Threads"
-    seqrand = "Rand"
-    wmix = 30
-    bs = 4096
-    runtime = shorttime
-    iops_log = False
-    iodepth = 1
-    AddTestThreadsShmoo()
+        testname = "Sustained " + str(int(bs / 1024)) + "KB Random mixed 30% Write Tests by Threads"
+        seqrand = "Rand"
+        wmix = 30
+        #bs = 4096
+        runtime = shorttime
+        iops_log = False
+        iodepth = 1
+        AddTestThreadsShmoo()
 
     testname = "Sustained Perf Stability Test - 4KB Random 30% Write"
     AddTest(testname, 'Preparation', '', '', '', '', '', '', '',
@@ -1043,14 +1054,15 @@ def DefineTests():
     DoAddTest(testname, seqrand, wmix, bs, threads, iodepth, testname,
               iops_log, runtime)
 
-    testname = "Sustained 4KB Random Write Tests by Number of Threads"
-    seqrand = "Rand"
-    wmix = 100
-    bs = 4096
-    runtime = shorttime
-    iops_log = False
-    iodepth = 1
-    AddTestThreadsShmoo()
+    for bs in [4096, 8192, 65536]:
+        testname = "Sustained " + str(int(bs / 1024)) + "KB Random Write Tests by Number of Threads"
+        seqrand = "Rand"
+        wmix = 100
+        #bs = 4096
+        runtime = shorttime
+        iops_log = False
+        iodepth = 1
+        AddTestThreadsShmoo()
 
     testname = "Sustained Multi-Threaded Random Write Tests by Block Size"
     seqrand = "Rand"
