@@ -286,7 +286,7 @@ def VerifyContinue():
         print("-" * 75)
         print("WARNING! " * 9)
         print("THIS TEST WILL DESTROY ANY DATA AND FILESYSTEMS ON " + physDrive)
-        cont = raw_input("Please type the word \"yes\" and hit return to " +
+        cont = input("Please type the word \"yes\" and hit return to " +
                          "continue, or anything else to abort.")
         print("-" * 75 + "\n")
         if cont != "yes":
