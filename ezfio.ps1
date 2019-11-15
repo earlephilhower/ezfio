@@ -41,6 +41,7 @@ param (
     [switch]$help,
     [switch]$yes,
     [switch]$nullio,
+	[switch]$fastprecond,
     [switch]$quickie
 )
 
@@ -216,7 +217,7 @@ function ParseArgs()
         "ezfio, an in-depth IO tester for NVME devices"
         "WARNING: All data on any tested device will be destroyed!`n"
         "Usage: "
-        [string]::Format("    .\{0} -drive <PhysicalDiskNumber> [-util <1..100>] [-outDir <path>]", $scriptname)
+        [string]::Format("    .\{0} -drive <PhysicalDiskNumber> [-util <1..100>] [-outDir <path>] [-nullIO]", $scriptname)
         [string]::Format("EX: .\{0} -drive 2 -util 100`n", $scriptname)
         "PhysDrive is the ID number of the \\PhysicalDrive to test"
         "Usage is the percent of total size to test (100%=default)`n"
@@ -274,6 +275,7 @@ function ParseArgs()
         $global:ioengine = "null"
     }
     $global:quickie = $quickie
+    $global:fastPrecond = $fastprecond
 
     # Do a sanity check that the selected drive does not show as a local drive letter
     Get-WMIObject Win32_LogicalDisk | Foreach-Object {
@@ -392,17 +394,20 @@ function CollectDriveInfo()
 
 # Set up names for all output/input files, place headers on CSVs.
 function CSVInfoHeader {
-    # Headers to the CSV file (ending up in the ODS at the test end)
-    "Drive,$global:physDrive"
-    "Model,$global:model"
-    "Serial,$global:serial"
-    "AvailCapacity,$global:physDriveGiB,GiB"
-    "TestedCapacity,$global:testcapacity,GiB"
-    "CPU,$global:cpu"
-    "Cores,$global:cpuCores"
-    "Frequency,$global:cpuFreqMHz"
-    "OS,$global:uname"
-    "FIOVersion,$global:fioVerString"
+    if ($global:fastPrecond -eq $false) { $prefix = "" }
+    else { $prefix = "FASTPRECOND-" }
+
+    #Headers to the CSV file (ending up in the ODS at the test end)
+    "Drive,$prefix$global:physDrive"
+    "Model,$prefix$global:model"
+    "Serial,$prefix$global:serial"
+    "AvailCapacity,$prefix$global:physDriveGiB,GiB"
+    "TestedCapacity,$prefix$global:testcapacity,GiB"
+    "CPU,$prefix$global:cpu"
+    "Cores,$prefix$global:cpuCores"
+    "Frequency,$prefix$global:cpuFreqMHz"
+    "OS,$prefix$global:uname"
+    "FIOVersion,$prefix$global:fioVerString"
 }
 
 function SetupFiles()
@@ -736,7 +741,9 @@ function DefineTests {
     }
 
     AddTest 'Sequential Preconditioning' 'Seq Pass 1' '100' '131072' '1' '256' 'Sequential Preconditioning' "$global:globals; $global:jobutils; SequentialConditioning;"
-    AddTest 'Sequential Preconditioning' 'Seq Pass 2' '100' '131072' '1' '256' 'Sequential Preconditioning' "$global:globals; $global:jobutils; SequentialConditioning;"
+    if ($global:fastPrecond -ne $true) {
+	    AddTest 'Sequential Preconditioning' 'Seq Pass 2' '100' '131072' '1' '256' 'Sequential Preconditioning' "$global:globals; $global:jobutils; SequentialConditioning;"
+    }
 
     $testname = "Sustained Multi-Threaded Sequential Read Tests by Block Size"
     $seqrand = "Seq"; $wmix=0; $threads=1; $runtime=$shorttime; $iops_log="`$false"; $iodepth=256
@@ -750,8 +757,10 @@ function DefineTests {
     $seqrand = "Seq"; $wmix=100; $threads=1; $runtime=$shorttime; $iops_log="`$false"; $iodepth=1
     AddTestBSShmoo
 
-    AddTest 'Random Preconditioning' 'Rand Pass 1' '100' '4096' '1' '256' 'Random Preconditioning' "$global:globals; $global:jobutils; RandomConditioning;"
-    AddTest 'Random Preconditioning' 'Rand Pass 2' '100' '4096' '1' '256' 'Random Preconditioning' "$global:globals; $global:jobutils; RandomConditioning;"
+    if ($global:fastPrecond -ne $true) {
+        AddTest 'Random Preconditioning' 'Rand Pass 1' '100' '4096' '1' '256' 'Random Preconditioning' "$global:globals; $global:jobutils; RandomConditioning;"
+        AddTest 'Random Preconditioning' 'Rand Pass 2' '100' '4096' '1' '256' 'Random Preconditioning' "$global:globals; $global:jobutils; RandomConditioning;"
+    }
 
     $testname = "Sustained 4KB Random Read Tests by Number of Threads"
     $seqrand = "Rand"; $wmix=0; $bs=4096; $runtime=$shorttime; $iops_log="`$false"; $iodepth=1
@@ -1276,6 +1285,7 @@ $global:physDrive = ""    # Device path to test
 $global:utilization = ""  # Device utilization % 1..100
 $global:yes = $false      # Skip user verification
 $global:nullio = $false   # Use the null IO engine, no real transfers done
+$global:fastPrecond = $false  # Only do one sequential fill, no other preconditioning
 $global:ioengine = "windowsaio"   # FIO engine to use for simplicity
 $global:quickie = $false   # Do short shadown test, non-standard
 
