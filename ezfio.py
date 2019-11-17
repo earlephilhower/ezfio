@@ -149,6 +149,7 @@ def ParseArgs():
     """Parse command line options into globals."""
     global physDrive, physDriveDict, physDriveTxt, utilization, nullio
     global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
+
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="A tool to easily run FIO to benchmark sustained "
@@ -200,12 +201,14 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     verify = args.verify
     fastPrecond = args.fastpre
     cluster = args.cluster
+
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
         nodes = physDrive.split(",")
         for node in nodes:
             physDriveDict[node.split(":")[0]] = node.split(":")[1]
         physDrive = nodes[0].split(":")[1]
+
     if (utilization < 1) or (utilization > 100):
         print("ERROR:  Utilization must be between 1...100")
         parser.print_help()
@@ -299,11 +302,12 @@ def CollectDriveInfo():
     global physDriveGiB, physDriveGB, physDriveBase, testcapacity, testoffset
     global model, serial, physDrive
     # We absolutely need this information
+    pd = physDrive.split(',')[0]
     try:
-        physDriveBase = os.path.basename(physDrive)
-        code, physDriveBytes, err = Run(['blockdev', '--getsize64', physDrive])
+        physDriveBase = os.path.basename(pd)
+        code, physDriveBytes, err = Run(['blockdev', '--getsize64', pd])
         if code != 0:
-            raise Exception("Can't get drive size for " + physDrive)
+            raise Exception("Can't get drive size for " + pd)
         physDriveBytes = physDriveBytes.split('\n')[0]
         physDriveBytes = int(physDriveBytes)
         physDriveGB = int(physDriveBytes / (1000 * 1000 * 1000))
@@ -311,7 +315,7 @@ def CollectDriveInfo():
         testcapacity = int((physDriveGiB * utilization) / 100)
         testoffset = int((physDriveGiB * offset) / 100)
     except:
-        print("ERROR: Can't get '" + physDrive + "' size. Incorrect device name?")
+        print("ERROR: Can't get '" + pd + "' size. Incorrect device name?")
         sys.exit(1)
     # These are nice to have, but we can run without it
     model = "UNKNOWN"
@@ -322,15 +326,14 @@ def CollectDriveInfo():
         if code == 0:
             j = json.loads(nvmecli)
             for drive in j['Devices']:
-                if drive['DevicePath'] == physDrive:
+                if drive['DevicePath'] == pd:
                     model = drive['ModelNumber']
                     serial = drive['SerialNumber']
                     return
     except:
         pass  # An error in nvme is not a problem
     try:
-        sdparmcmd = ['sdparm', '--page', 'sn', '--inquiry', '--long',
-                     physDrive]
+        sdparmcmd = ['sdparm', '--page', 'sn', '--inquiry', '--long', pd]
         code, sdparm, err = Run(sdparmcmd)
         lines = sdparm.split("\n")
         if len(lines) == 4:
@@ -464,24 +467,25 @@ def SequentialConditioning():
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
         jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
-        jobfile.write("[SeqCond]\n")
-        # Note that we can't use regular test runner because this test needs
-        # to run for a specified # of bytes, not a specified # of seconds.
-        jobfile.write("readwrite=write\n")
-        jobfile.write("bs=128k\n")
-        if nullio:
-            jobfile.write("ioengine=null\n")
-        else:
-            jobfile.write("ioengine=libaio\n")
-        jobfile.write("iodepth=64\n")
-        jobfile.write("direct=1\n")
-        jobfile.write("filename=" + str(drive) + "\n")
-        if quickie:
-            jobfile.write("size=1G\n")
-        else:
-            jobfile.write("size=" + str(testcapacity) + "G\n")
-        jobfile.write("thread=1\n")
-        jobfile.write("offset=" + str(testoffset) + "G\n")
+        for dr in drive.split(','):
+            jobfile.write("[SeqCond-" + dr + "]\n")
+            # Note that we can't use regular test runner because this test needs
+            # to run for a specified # of bytes, not a specified # of seconds.
+            jobfile.write("readwrite=write\n")
+            jobfile.write("bs=128k\n")
+            if nullio:
+                jobfile.write("ioengine=null\n")
+            else:
+                jobfile.write("ioengine=libaio\n")
+            jobfile.write("iodepth=64\n")
+            jobfile.write("direct=1\n")
+            jobfile.write("filename=" + str(dr) + "\n")
+            if quickie:
+                jobfile.write("size=1G\n")
+            else:
+                jobfile.write("size=" + str(testcapacity) + "G\n")
+            jobfile.write("thread=1\n")
+            jobfile.write("offset=" + str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
 
@@ -519,29 +523,30 @@ def RandomConditioning():
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the random jobfile"""
         jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
-        jobfile.write("[RandCond]\n")
-        # Note that we can't use regular test runner because this test needs
-        # to run for a specified # of bytes, not a specified # of seconds.
-        jobfile.write("readwrite=randwrite\n")
-        jobfile.write("bs=4k\n")
-        jobfile.write("invalidate=1\n")
-        jobfile.write("end_fsync=0\n")
-        jobfile.write("group_reporting=1\n")
-        jobfile.write("direct=1\n")
-        jobfile.write("filename=" + str(drive) + "\n")
-        if quickie:
-            jobfile.write("size=1G\n")
-        else:
-            jobfile.write("size=" + str(testcapacity) + "G\n")
-        if nullio:
-            jobfile.write("ioengine=null\n")
-        else:
-            jobfile.write("ioengine=libaio\n")
-        jobfile.write("iodepth=256\n")
-        jobfile.write("norandommap\n")
-        jobfile.write("randrepeat=0\n")
-        jobfile.write("thread=1\n")
-        jobfile.write("offset=" + str(testoffset) + "G\n")
+        for dr in drive.split(','):
+            jobfile.write("[RandCond-" + dr + "]\n")
+            # Note that we can't use regular test runner because this test needs
+            # to run for a specified # of bytes, not a specified # of seconds.
+            jobfile.write("readwrite=randwrite\n")
+            jobfile.write("bs=4k\n")
+            jobfile.write("invalidate=1\n")
+            jobfile.write("end_fsync=0\n")
+            jobfile.write("group_reporting=1\n")
+            jobfile.write("direct=1\n")
+            jobfile.write("filename=" + str(dr) + "\n")
+            if quickie:
+                jobfile.write("size=1G\n")
+            else:
+                jobfile.write("size=" + str(testcapacity) + "G\n")
+            if nullio:
+                jobfile.write("ioengine=null\n")
+            else:
+                jobfile.write("ioengine=libaio\n")
+            jobfile.write("iodepth=256\n")
+            jobfile.write("norandommap\n")
+            jobfile.write("randrepeat=0\n")
+            jobfile.write("thread=1\n")
+            jobfile.write("offset=" + str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
 
@@ -650,32 +655,33 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         """Make a jobfile for the specified test parameters"""
         global verify, nullio
         jobfile = tempfile.NamedTemporaryFile(delete=False, mode='w')
-        jobfile.write("[test]\n")
-        jobfile.write("readwrite=" + str(rw) + "\n")
-        jobfile.write("rwmixwrite=" + str(wmix) + "\n")
-        jobfile.write("bs=" + str(bs) + "\n")
-        jobfile.write("invalidate=1\n")
-        jobfile.write("end_fsync=0\n")
-        jobfile.write("group_reporting=1\n")
-        jobfile.write("direct=1\n")
-        jobfile.write("filename=" + str(drive) + "\n")
-        jobfile.write("size=" + str(testcapacity) + "G\n")
-        jobfile.write("time_based=1\n")
-        jobfile.write("runtime=" + str(runtime) + "\n")
-        if nullio:
-            jobfile.write("ioengine=null\n")
-        else:
-            jobfile.write("ioengine=libaio\n")
-        jobfile.write("numjobs=" + str(threads) + "\n")
-        jobfile.write("iodepth=" + str(iodepth) + "\n")
-        jobfile.write("norandommap=1\n")
-        jobfile.write("randrepeat=0\n")
-        jobfile.write("thread=1\n")
-        jobfile.write("exitall=1\n")
-        if verify:
-            jobfile.write("verify=crc32c\n")
-            jobfile.write("random_generator=lfsr\n")
-        jobfile.write("offset=" + str(testoffset) + "G\n")
+        for dr in drive.split(","):
+            jobfile.write("[test-" + dr + "]\n")
+            jobfile.write("readwrite=" + str(rw) + "\n")
+            jobfile.write("rwmixwrite=" + str(wmix) + "\n")
+            jobfile.write("bs=" + str(bs) + "\n")
+            jobfile.write("invalidate=1\n")
+            jobfile.write("end_fsync=0\n")
+            jobfile.write("group_reporting=1\n")
+            jobfile.write("direct=1\n")
+            jobfile.write("filename=" + str(dr) + "\n")
+            jobfile.write("size=" + str(testcapacity) + "G\n")
+            jobfile.write("time_based=1\n")
+            jobfile.write("runtime=" + str(runtime) + "\n")
+            if nullio:
+                jobfile.write("ioengine=null\n")
+            else:
+                jobfile.write("ioengine=libaio\n")
+            jobfile.write("numjobs=" + str(threads) + "\n")
+            jobfile.write("iodepth=" + str(iodepth) + "\n")
+            jobfile.write("norandommap=1\n")
+            jobfile.write("randrepeat=0\n")
+            jobfile.write("thread=1\n")
+            jobfile.write("exitall=1\n")
+            if verify:
+                jobfile.write("verify=crc32c\n")
+                jobfile.write("random_generator=lfsr\n")
+            jobfile.write("offset=" + str(testoffset) + "G\n")
         jobfile.close()
         return jobfile
 
@@ -800,7 +806,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     # There are some NVME drives with 4k physical and logical out there.
     # Check that we can actually do this size IO, OTW return 0 for all
     skiptest = False
-    code, out, err = Run(['blockdev', '--getpbsz', str(physDrive)])
+    code, out, err = Run(['blockdev', '--getpbsz', str(physDrive.split(',')[0])])
     if code == 0:
         iomin = int(out.split("\n")[0])
         if int(bs) < iomin:
