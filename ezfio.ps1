@@ -490,7 +490,7 @@ function SequentialConditioning
     # Sequentially fill the complete capacity of the drive once.
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    if ($quickie) {
+    if ( $quickie ) {
         $size = "1G"
     } else {
         $size = "${testcapacity}G"
@@ -508,7 +508,7 @@ function RandomConditioning
     # Randomly write entire device for the full capacity
     # Note that we can't use regular test runner because this test needs
     # to run for a specified # of bytes, not a specified # of seconds.
-    if ($quickie) {
+    if ( $quickie ) {
         $size = "1G"
     } else {
         $size = "${testcapacity}G"
@@ -720,7 +720,7 @@ function DefineTests {
     $threadslist = (1, 2, 4, 8, 16, 32, 64, 128, 256)
     $shorttime = 120 # Runtime of point tests
     $longtime = 1200 # Runtime of long-running tests
-    if ($quickie) {
+    if ( $quickie ) {
         $shorttime = [int]($shorttime / 10)
         $longtime = [int]($longtime / 10)
     }
@@ -1353,7 +1353,11 @@ $global:globals += "`$physDriveNo = `"$global:physDriveNo`";"
 $global:globals += "`$details= `"$global:details`";"
 $global:globals += "`$ds = `"$global:ds`";"
 $global:globals += "`$ioengine = `"$global:ioengine`";"
-$global:globals += "`$quickie = `"$global:quickie`";"
+if ( $globals:quickie ) {
+    $global:globals += "`$quickie = 1;"
+} else {
+    $global:globals += "`$quickie = 0;"
+}
 
 
 DefineTests
