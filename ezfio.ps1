@@ -41,7 +41,7 @@ param (
     [switch]$help,
     [switch]$yes,
     [switch]$nullio,
-	[switch]$fastprecond,
+    [switch]$fastprecond,
     [switch]$quickie
 )
 
@@ -663,6 +663,18 @@ function RunTest
     }
     $cmd += ("--thread", "--output-format=$fioOutputFormat", "--exitall")
     $fio + " " + [string]::Join(" ", $cmd) | Out-File $testfile
+
+    # Check that the IO size is usable.  Some SSDs are only 4K logical sectors
+    $minblock = (Get-Disk | Where-Object { $_.Number -eq $global:physDriveNo }).LogicalSectorSize
+    if ( $bs -lt $minblock ) {
+        "Test not run because block size $bs below minimum size $minblock" | Out-File -Append $testfile
+        "3;" + "0;" * 100 | Out-File -Append $testfile # Bogus 0-filled result line
+        "1,1" | Out-File "${testfile}.exc.read.csv"
+        "1,1" | Out-File "${testfile}.exc.write.csv"
+        Write-Output "SKIP" "SKIP" "SKIP"
+        return
+    }
+
     . $fio @cmd | Out-File -Append $testfile
 
     if ( $LastExitCode -ne 0 ) {
