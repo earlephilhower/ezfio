@@ -49,6 +49,7 @@ param (
 Add-Type -Assembly System.IO.Compression
 Add-Type -Assembly System.IO.Compression.FileSystem
 Add-Type -AssemblyName PresentationFramework, System.Windows.Forms
+Add-Type -AssemblyName PresentationCore
 
 Chdir (Split-Path $script:MyInvocation.MyCommand.Path)
 
