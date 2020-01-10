@@ -671,6 +671,7 @@ function RunTest
         "3;" + "0;" * 100 | Out-File -Append $testfile # Bogus 0-filled result line
         "1,1" | Out-File "${testfile}.exc.read.csv"
         "1,1" | Out-File "${testfile}.exc.write.csv"
+        "$seqrand,$wmix,$bs,$threads,$iodepth,0,0,0,0" | Out-File -Append $testcsv
         Write-Output "SKIP" "SKIP" "SKIP"
         return
     }
@@ -701,7 +702,7 @@ function RunTest
     $mbpsfloat = (( ($rdiops+$wriops) * $bs ) / ( 1024.0 * 1024.0 ))
     "{0:f1}" -f $mbpsfloat | Set-Variable mbps
     $lat = "{0:F1}" -f ([math]::Max($rlat, $wlat)) # This is just displayed, use native locale
-    "$seqrand,$wmix,$bs,$threads,$iodepth,$iops,$mbps,$rlat,$wlat" >> $testcsv
+    "$seqrand,$wmix,$bs,$threads,$iodepth,$iops,$mbps,$rlat,$wlat" | Out-File -Append $testcsv
 
     WriteExceedance $j "read" "${testfile}.exc.read.csv"
     WriteExceedance $j "write" "${testfile}.exc.write.csv"
