@@ -147,7 +147,7 @@ def CheckAIOLimits():
 
 def ParseArgs():
     """Parse command line options into globals."""
-    global physDrive, physDriveDict, physDriveTxt, utilization, nullio
+    global physDrive, physDriveDict, physDriveTxt, utilization, nullio, isFile
     global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
 
     parser = argparse.ArgumentParser(
@@ -186,6 +186,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
                         required=False)
     parser.add_argument("--quickie", dest="quickie", help=argparse.SUPPRESS,
                         action='store_true', required=False)
+    parser.add_argument("--file", dest="file", help="Test using a regular file, not a device",
+                        action='store_true', required=False)
     parser.add_argument("--nullio", dest="nullio", help=argparse.SUPPRESS,
                         action='store_true', required=False)
     args = parser.parse_args()
@@ -201,6 +203,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     verify = args.verify
     fastPrecond = args.fastpre
     cluster = args.cluster
+    isFile = args.file
 
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
@@ -300,14 +303,18 @@ def VerifyContinue():
 def CollectDriveInfo():
     """Get important device information, exit if not possible."""
     global physDriveGiB, physDriveGB, physDriveBase, testcapacity, testoffset
-    global model, serial, physDrive
+    global model, serial, physDrive, isFile
     # We absolutely need this information
     pd = physDrive.split(',')[0]
     try:
-        physDriveBase = os.path.basename(pd)
-        code, physDriveBytes, err = Run(['blockdev', '--getsize64', pd])
-        if code != 0:
-            raise Exception("Can't get drive size for " + pd)
+        if isFile:
+            physDriveBase = os.path.basename(pd)
+            physDriveBytes = str(os.stat(pd).st_size) + "\n"
+        else:
+            physDriveBase = os.path.basename(pd)
+            code, physDriveBytes, err = Run(['blockdev', '--getsize64', pd])
+            if code != 0:
+                raise Exception("Can't get drive size for " + pd)
         physDriveBytes = physDriveBytes.split('\n')[0]
         physDriveBytes = int(physDriveBytes)
         physDriveGB = int(physDriveBytes / (1000 * 1000 * 1000))
