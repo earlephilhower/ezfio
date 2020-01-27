@@ -689,7 +689,14 @@ function RunTest
         CombineThreadOutputs '_slat' $timeseriesslatcsv $true $runtime $extra_runtime
     }
 
-    $j = ConvertFrom-Json "$(Get-Content $testfile | select -Skip 1)"
+    # Thanks to @BryanTuttle.  Skip any FIO output before the JSON open-bracket
+    $LineSkip=0
+    foreach ($line in Get-Content $testfile) {
+	    if ($line -match '^{') { break }
+		else {$LineSkip++}
+    }
+
+    $j = ConvertFrom-Json "$(Get-Content $testfile | select -Skip $LineSkip)"
     $rdiops = [float]($j.jobs[0].read.iops);
     $wriops = [float]($j.jobs[0].write.iops);
     $rlat = [float]($j.jobs[0].read.lat_ns.mean) / 1000.0;
