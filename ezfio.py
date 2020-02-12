@@ -614,7 +614,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         try:
             # Non-cluster case will have jobs, only a single one needed
             ios = j['jobs'][0][rdwr]['total_ios']
-            bins = j['jobs'][0][rdwr]['clat_ns']['bins']
+            if ('N' in j['jobs'][0][rdwr]['clat_ns']) and (j['jobs'][0][rdwr]['clat_ns']['N'] > 0): 
+                bins = j['jobs'][0][rdwr]['clat_ns']['bins']
+            else:
+                bins = {}
         except:
             # Cluster case will have client_stats to combine
             for client_stats in j['client_stats']:
