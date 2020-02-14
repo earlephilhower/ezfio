@@ -149,6 +149,7 @@ def ParseArgs():
     """Parse command line options into globals."""
     global physDrive, physDriveDict, physDriveTxt, utilization, nullio, isFile
     global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
+    global readOnly
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -190,6 +191,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
                         action='store_true', required=False)
     parser.add_argument("--nullio", dest="nullio", help=argparse.SUPPRESS,
                         action='store_true', required=False)
+    parser.add_argument("--readonly", dest="readonly", help="Only run read-only tests, don't write to device",
+                        action='store_true', required=False)
     args = parser.parse_args()
 
     physDrive = args.physDrive
@@ -204,6 +207,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     fastPrecond = args.fastpre
     cluster = args.cluster
     isFile = args.file
+    readOnly = args.readonly
 
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
@@ -469,7 +473,7 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
-    global quickie, fastPrecond, nullio
+    global quickie, fastPrecond, nullio, readOnly
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
@@ -509,7 +513,10 @@ def SequentialConditioning():
             jobfile = jobfile + [newjob]
     cmdline = cmdline + ['--output-format=' + str(fioOutputFormat)]
 
-    code, out, err = Run(cmdline)
+    if not readOnly:
+        code, out, err = Run(cmdline)
+    else:
+        code = 0
 
     if cluster:
         for job in jobfile:
@@ -525,7 +532,7 @@ def SequentialConditioning():
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
-    global quickie, nullio
+    global quickie, nullio, readOnly
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the random jobfile"""
@@ -570,7 +577,10 @@ def RandomConditioning():
             jobfile = jobfile + [newjob]
     cmdline = cmdline + ['--output-format=' + str(fioOutputFormat)]
 
-    code, out, err = Run(cmdline)
+    if not readOnly:
+        code, out, err = Run(cmdline)
+    else:
+        code = 0
 
     if cluster:
         for job in jobfile:
@@ -750,14 +760,14 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         # Generate the combined CSV
         with open(outcsv, 'a') as f:
             for cnt in range(int(extra_runtime/2), runtime + extra_runtime):
-                if lat:
+                if filecnt > 0 and lat:
                     line = str(float(iops[cnt])/float(filecnt))
                     line = line + ',' + str(float(iops_w[cnt])/float(filecnt))
                 else:
                     line = str(iops[cnt])
                 if len(pdd.keys()) > 1:
                     for host in pdd.keys():
-                        if lat:
+                        if filecnt > 0 and lat:
                             line = line + ',' + \
                                 str(float(host_iops[host][cnt])/float(filecnt))
                             line = line + ',' + \
@@ -821,6 +831,10 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
         iomin = int(out.split("\n")[0])
         if int(bs) < iomin:
             skiptest = True
+
+    if readOnly and wmix != 0:
+        skiptest = True 
+
     # Silently ignore failure to return min block size, FIO will fail and
     # we'll catch that a little later.
     if skiptest:
@@ -1386,6 +1400,7 @@ quickie = False   # Flag to indicate short runs, only for ezfio debugging!
 nullio = False    # Flag to do no IO at all, use nullio instead
 fastPrecond = False  # Only do 1x sequential write for preconditioning (no random)
 verify = False    # Use built-in FIO data verification
+readOnly = False  # Only run read-only tests
 
 cpu = ""         # CPU model
 cpuCores = ""    # # of cores (including virtual)
