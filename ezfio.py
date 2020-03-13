@@ -414,8 +414,8 @@ def SetupFiles():
         os.unlink(testcsv)
     CSVInfoHeader(testcsv)
     AppendFile("Type,Write %,Block Size,Threads,Queue Depth/Thread,IOPS," +
-               "Bandwidth (MB/s),Read Latency (us),Write Latency (us)",
-               testcsv)
+               "Bandwidth (MB/s),Read Latency (us),Write Latency (us)," +
+               "System CPU,User CPU", testcsv)
     timeseriescsv = details + "/ezfio_timeseries_"+suffix+".csv"
     timeseriesclatcsv = details + "/ezfio_timeseriesclat_"+suffix+".csv"
     timeseriesslatcsv = details + "/ezfio_timeseriesslat_"+suffix+".csv"
@@ -870,6 +870,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     wriops = 0
     rlat = 0
     wlat = 0
+    syscpu = 0
+    usrcpu = 0
     if not skiptest:
         # Chomp anything before the json.
         for i in range(0, len(out)):
@@ -887,6 +889,9 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                     break
         else:
             client = j['jobs'][0]
+
+        syscpu = float(client['sys_cpu'])
+        usrcpu = float(client['usr_cpu'])
 
         rdiops = float(client['read']['iops'])
         wriops = float(client['write']['iops'])
@@ -908,7 +913,7 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
 
     AppendFile(",".join((str(seqrand), str(wmix), str(bs), str(threads),
                          str(iodepth), str(iops), str(mbps), str(rlat),
-                         str(wlat))), testcsv)
+                         str(wlat), str(syscpu), str(usrcpu))), testcsv)
 
     if skiptest:
         AppendFile("1,1\n", testfile + ".exc.read.csv")
