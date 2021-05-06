@@ -1163,7 +1163,7 @@ def RunAllTests():
             starttime = datetime.datetime.now()
             job = threading.Thread(target=JobWrapper, kwargs=(o))
             job.start()
-            while job.isAlive():
+            while job.is_alive():
                 now = datetime.datetime.now()
                 delta = now - starttime
                 dstr = "{0:02}:{1:02}:{2:02}".format(int(delta.seconds / 3600),
