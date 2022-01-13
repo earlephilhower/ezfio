@@ -149,7 +149,7 @@ def ParseArgs():
     """Parse command line options into globals."""
     global physDrive, physDriveDict, physDriveTxt, utilization, nullio, isFile
     global outputDest, offset, cluster, yes, quickie, verify, fastPrecond
-    global readOnly
+    global readOnly, compressPct
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -193,6 +193,8 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
                         action='store_true', required=False)
     parser.add_argument("--readonly", dest="readonly", help="Only run read-only tests, don't write to device",
                         action='store_true', required=False)
+    parser.add_argument("--compress_percentage", dest="compresspct", help="Set the target data compressibility",
+                        default="100", type=int, required=False)
     args = parser.parse_args()
 
     physDrive = args.physDrive
@@ -208,6 +210,7 @@ WARNING: All data on the target device will be DESTROYED by this test.""")
     cluster = args.cluster
     isFile = args.file
     readOnly = args.readonly
+    compressPct = args.compresspct
 
     # For cluster mode, we add a new physDriveList dict and fake physDrive
     if cluster:
@@ -473,7 +476,7 @@ def TestName(seqrand, wmix, bs, threads, iodepth):
 
 def SequentialConditioning():
     """Sequentially fill the complete capacity of the drive once."""
-    global quickie, fastPrecond, nullio, readOnly
+    global quickie, fastPrecond, nullio, readOnly, compressPct
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the sequential jobfile for a single server"""
@@ -497,6 +500,8 @@ def SequentialConditioning():
                 jobfile.write("size=" + str(testcapacity) + "G\n")
             jobfile.write("thread=1\n")
             jobfile.write("offset=" + str(testoffset) + "G\n")
+            if compressPct != 100:
+                jobfile.write("buffer_compress_percentage=" + str(compressPct) + "\n")
         jobfile.close()
         return jobfile
 
@@ -532,7 +537,7 @@ def SequentialConditioning():
 
 def RandomConditioning():
     """Randomly write entire device for the full capacity"""
-    global quickie, nullio, readOnly
+    global quickie, nullio, readOnly, compressPct
 
     def GenerateJobfile(drive, testcapacity, testoffset):
         """Write the random jobfile"""
@@ -561,6 +566,8 @@ def RandomConditioning():
             jobfile.write("randrepeat=0\n")
             jobfile.write("thread=1\n")
             jobfile.write("offset=" + str(testoffset) + "G\n")
+            if compressPct != 100:
+                jobfile.write("buffer_compress_percentage=" + str(compressPct) + "\n")
         jobfile.close()
         return jobfile
 
@@ -596,7 +603,7 @@ def RandomConditioning():
 
 def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
     """Runs the specified test, generates output CSV lines."""
-    global cluster, physDriveDict
+    global cluster, physDriveDict, compressPct
 
     # Taken from fio_latency2csv.py - needed to convert funky semi-log to normal latencies
     def plat_idx_to_val(idx, FIO_IO_U_PLAT_BITS=6, FIO_IO_U_PLAT_VAL=64):
@@ -702,6 +709,8 @@ def RunTest(iops_log, seqrand, wmix, bs, threads, iodepth, runtime):
                 jobfile.write("verify=crc32c\n")
                 jobfile.write("random_generator=lfsr\n")
             jobfile.write("offset=" + str(testoffset) + "G\n")
+            if compressPct != 100:
+                jobfile.write("buffer_compress_percentage=" + str(compressPct) + "\n")
         jobfile.close()
         return jobfile
 
