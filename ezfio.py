@@ -273,7 +273,17 @@ def CollectSystemInfo():
     uname = " ".join(platform.uname())
     code, cpuinfo, err = Run(['cat', '/proc/cpuinfo'])
     cpuinfo = cpuinfo.split("\n")
-    if 'ppc64' in uname:
+    if 'aarch64' in uname:
+        code, cpuinfo, err = Run(['lscpu'])
+        cpuinfo = cpuinfo.split("\n")
+        cpu = grep(cpuinfo, r'Model name')[0].split(':')[1].lstrip()
+        cpuCores = grep(cpuinfo, r'CPU')[1].split(':')[1].lstrip()
+        try:
+            code, dmidecode, err = Run(['dmidecode', '--type', 'processor'])
+            cpuFreqMHz = int(round(float(grep(dmidecode.split("\n"), r'Current Speed')[0].rstrip().lstrip().split(" ")[2])))
+        except:
+            cpuFreqMHz = grep(cpuinfo, r'max')[0].split(':')[1].lstrip()
+    elif 'ppc64' in uname:
         # Implement grep and sed in Python...
         cpu = grep(cpuinfo, r'model')[0].split(': ')[1].replace('(R)', '').replace('(TM)', '')
         cpuCores = len(grep(cpuinfo, r'processor'))
