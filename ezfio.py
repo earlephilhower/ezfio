@@ -274,7 +274,6 @@ def CollectSystemInfo():
     code, cpuinfo, err = Run(['cat', '/proc/cpuinfo'])
     cpuinfo = cpuinfo.split("\n")
     if 'aarch64' in uname:
-        print('working on aarch64')
         code, cpuinfo, err = Run(['lscpu'])
         cpuinfo = cpuinfo.split("\n")
         cpu = grep(cpuinfo, r'Model name')[0].split(':')[1].lstrip()
